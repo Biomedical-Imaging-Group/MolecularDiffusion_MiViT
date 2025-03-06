@@ -38,3 +38,32 @@ def brownian_motion(nparticles, nframes, nposframe, D, dt, startAtZero=False):
         trajectory[p] = positions
 
     return trajectory
+
+
+def average_trajectory_frames(trajectories, nPosFrame):
+    """
+    Average multiple position frames together to create a reduced trajectory.
+    
+    Parameters:
+    - trajectories (ndarray): Array of shape (Nparticles, nsteps, 2) 
+                              representing the x, y positions of each particle over time.
+    - nPosFrame (int): Number of frames to average together.
+    
+    Returns:
+    - averaged_trajectories (ndarray): Array of shape (Nparticles, nsteps/nPosFrame, 2)
+                                      with positions averaged over nPosFrame frames.
+    """
+    Nparticles, nsteps, dims = trajectories.shape
+    
+    # Calculate how many full frames we can make
+    nFullFrames = nsteps // nPosFrame
+    
+    # Reshape to group frames together
+    # This creates an array of shape (Nparticles, nFullFrames, nPosFrame, 2)
+    reshaped = trajectories[:, :nFullFrames*nPosFrame].reshape(Nparticles, nFullFrames, nPosFrame, dims)
+    
+    # Average over the nPosFrame axis (axis=2)
+    # Result will be shape (Nparticles, nFullFrames, 2)
+    averaged_trajectories = np.mean(reshaped, axis=2)
+    
+    return averaged_trajectories
