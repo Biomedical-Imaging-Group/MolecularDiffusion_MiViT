@@ -1,5 +1,5 @@
 import numpy as np
-
+import matplotlib as plt
 
 def brownian_motion(nparticles, nframes, nposframe, D, dt, startAtZero=False):
 
@@ -67,3 +67,51 @@ def average_trajectory_frames(trajectories, nPosFrame):
     averaged_trajectories = np.mean(reshaped, axis=2)
     
     return averaged_trajectories
+
+
+def gaussian_2d(xc, yc, sigma, grid_size, amplitude=1.0):
+    """
+    Generates a 2D Gaussian point spread function (PSF) centered at a specified position.
+
+    Parameters:
+    - xc, yc (float): The center coordinates (x, y) of the Gaussian within the grid.
+    - sigma (float): Standard deviation of the Gaussian, controlling the spread (related to FWHM).
+    - grid_size (int): Size of the output grid (grid will be grid_size x grid_size).
+    - amplitude (float): Peak amplitude of the Gaussian function.
+
+    Returns:
+    - gauss (ndarray): A 2D array representing the Gaussian function centered at (xc, yc).
+    """
+    limit = (grid_size - 1) // 2  # Defines the range for x and y axes
+    x = np.linspace(-limit, limit, grid_size)
+    y = np.linspace(-limit, limit, grid_size)
+    x, y = np.meshgrid(x, y)
+    
+    # Calculate the Gaussian function centered at (xc, yc)
+    gauss = amplitude * np.exp(-(((x - xc) ** 2) / (2 * sigma ** 2) + ((y - yc) ** 2) / (2 * sigma ** 2)))
+    return gauss
+
+
+from skimage.measure import block_reduce
+
+def generateImages(trajectory, nframes, npixel, factor_hr, nposframe, fwhm_psf, pixelsize, flux, background, gaussian_noise):
+    frame_hr = np.zeros((nframes, npixel*factor_hr, npixel*factor_hr))
+    frame_noisy = np.zeros((nframes, npixel, npixel))
+    frame_lr = np.zeros((nframes, npixel, npixel))
+
+    for k in range(nframes):
+        start = k*nposframe
+        end = (k+1)*nposframe
+        trajectory_segment = trajectory[start:end,:]
+        xtraj = trajectory_segment[:,0]
+        ytraj = trajectory_segment[:,1]
+        # Generate frame, convolution, resampling, noise
+        for p in range(nposframe):
+            frame_spot = gaussian_2d(xtraj[p], ytraj[p], 2.35*fwhm_psf/pixelsize, npixel*factor_hr, flux) 
+            frame_hr[k] += frame_spot
+        frame_lr[k] = block_reduce(frame_hr[k], block_size=factor_hr, func=np.mean)
+        # Add Gaussian noise to background intensity across the image
+        frame_noisy[k] = frame_lr[k] + np.clip(np.random.normal(background, gaussian_noise, frame_lr[k].shape), 
+                                       0, background + 3 * gaussian_noise)
+        
+    return frame_hr, frame_lr, frame_noisy

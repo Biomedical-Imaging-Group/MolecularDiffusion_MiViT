@@ -1,6 +1,11 @@
 import numpy as np
 import matplotlib as plt
-
+import matplotlib.animation as animation
+import matplotlib.pyplot as plt
+from IPython.display import HTML
+import numpy as np
+import imageio
+from PIL import Image
 
 def plot1ParticleTrajectory(trajectory, nframes, D):
     """
@@ -67,3 +72,63 @@ def show_plt(plt, title, xlabel='', ylabel='',legend=False):
     if(legend):
         plt.legend()  # Uncomment if there are multiple series to label
     plt.show()
+
+
+def play_video(video, figsize=(5, 5), fps=5, vmin=None, vmax=None, save_path=None):
+    """
+    Displays a stack of images as a video inside jupyter notebooks with consistent intensity scaling.
+
+    Parameters
+    ----------
+    video : ndarray
+        Stack of images.
+    figsize : tuple, optional
+        Canvas size of the video.
+    fps : int, optional
+        Video frame rate.
+    vmin : float, optional
+        Minimum intensity value for all frames. If None, will be automatically determined.
+    vmax : float, optional
+        Maximum intensity value for all frames. If None, will be automatically determined.
+
+    Returns
+    -------
+    Video object
+        Returns a video player with input stack of images.
+    """
+    fig = plt.figure(figsize=figsize)
+    images = []
+    plt.axis("off")
+    
+    # If vmin/vmax not provided, compute global min/max across all frames
+    if vmin is None:
+        vmin = np.min([frame[:, :, 0].min() for frame in video])
+    if vmax is None:
+        vmax = np.max([frame[:, :, 0].max() for frame in video])
+    print(f"vmin: {vmin} vmax: {vmax}")
+
+    for image in video:
+        images.append([plt.imshow(image[:, :, 0], cmap="gray", vmin=vmin, vmax=vmax)])
+
+    anim = animation.ArtistAnimation(
+        fig, images, interval=1e3 / fps, blit=True, repeat_delay=0
+    )
+
+    html = HTML(anim.to_jshtml())
+    display(html)
+
+    # Save the animation if a save path is provided
+    if save_path:
+        if save_path.endswith('.mp4'):
+            # Use FFMpegWriter for MP4 files (requires FFmpeg installed)
+            writer = animation.FFMpegWriter(fps=fps, metadata=dict(artist='Me'), bitrate=1800)
+            anim.save(save_path, writer=writer)
+            print(f"Animation saved to {save_path}")
+        elif save_path.endswith('.gif'):
+            # Use PillowWriter for GIF files
+            writer = animation.PillowWriter(fps=fps)
+            anim.save(save_path, writer=writer)
+            print(f"Animation saved to {save_path}")
+        else:
+            print("Unsupported file format. Use .mp4 or .gif extension.")
+    plt.close()
