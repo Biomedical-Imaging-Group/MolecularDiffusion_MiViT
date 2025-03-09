@@ -95,6 +95,9 @@ def gaussian_2d(xc, yc, sigma, grid_size, amplitude):
 from skimage.measure import block_reduce
 
 def generateImages(trajectory, nframes, npixel, factor_hr, nposframe, fwhm_psf, pixelsize, flux, background, gaussian_noise):
+    """
+    Old function used for generating the IABM Images, see transform_to_video for real version
+    """
     frame_hr = np.zeros((nframes, npixel*factor_hr, npixel*factor_hr))
     frame_noisy = np.zeros((nframes, npixel, npixel))
     frame_lr = np.zeros((nframes, npixel, npixel))
@@ -118,7 +121,7 @@ def generateImages(trajectory, nframes, npixel, factor_hr, nposframe, fwhm_psf, 
 
 
 
-def transform_to_video(
+def trajectories_to_video(
     trajectories,
     nPosPerFrame,
     image_props={},
@@ -199,40 +202,189 @@ def transform_to_video(
 
     output_size = _image_dict["output_size"]
     upsampling_factor = _image_dict["upsampling_factor"]
+    # Psf is computed as 0.51 * wavelenght/NA according to:
+    fwhm_psf = 0.51 * _image_dict["wavelength"] / _image_dict["NA"]
+    gaussian_sigma = upsampling_factor* fwhm_psf/2.355/_image_dict["resolution"]
 
     trajectories = trajectories 
+    
+    out_videos = np.zeros((N,nFrames,output_size,output_size))
 
-    out_images = np.zeros((N,nFrames,output_size,output_size))
-
-    # Psf is computed as 0.51 * wavelenght/NA according to:
     # https://www.leica-microsystems.com/science-lab/life-science/microscope-resolution-concepts-factors-and-calculation/
-    fwhm_psf = 0.51 * _image_dict["wavelength"] / _image_dict["NA"]
     particle_mean, particle_std = _image_dict["particle_intensity"][0],_image_dict["particle_intensity"][1]
     background_mean, background_std = _image_dict["background_intensity"][0],_image_dict["background_intensity"][1]
 
-    # n is for indexing the particle, f the frame, p the subposition
+    # n is for indexing the particle
     for n in range(N):
-        for f in range(nFrames):
-            frame_hr = np.zeros(( output_size*upsampling_factor, output_size*upsampling_factor))
-            frame_noisy = np.zeros((output_size, output_size))
-            frame_lr = np.zeros((output_size, output_size))
+        trajectory_to_video(out_videos[n,:],trajectories[n,:],nFrames,output_size,upsampling_factor,nPosPerFrame,
+                                              gaussian_sigma,particle_mean,particle_std,background_mean,background_std)
 
-            start = f*nPosPerFrame
-            end = (f+1)*nPosPerFrame
-            trajectory_segment = trajectories[n,start:end,:]
-            xtraj = trajectory_segment[:,0] * upsampling_factor
-            ytraj = trajectory_segment[:,1] * upsampling_factor
+    return out_videos
 
-            # Generate frame, convolution, resampling, noise
-            for p in range(nPosPerFrame):
-                frame_spot = gaussian_2d(xtraj[p], ytraj[p], upsampling_factor* fwhm_psf/2.355/_image_dict["resolution"], output_size*upsampling_factor, 
-                                         np.random.normal(particle_mean/nPosPerFrame,particle_std/nPosPerFrame))
-                 
-                frame_hr += frame_spot
-            frame_lr = block_reduce(frame_hr, block_size=upsampling_factor, func=np.mean)
-            # Add Gaussian noise to background intensity across the image
-            frame_noisy = frame_lr + np.clip(np.random.normal(background_mean, background_std, frame_lr.shape), 
-                                        0, background_mean + 3 * background_std)
-            out_images[n,f,:] = frame_noisy
 
-    return out_images
+
+
+def trajectory_to_video(out_video,trajectory,nFrames, output_size, upsampling_factor, nPosPerFrame,gaussian_sigma,particle_mean,particle_std,background_mean,background_std):
+    """Helper function of function above, all arguments documented above"""
+    for f in range(nFrames):
+        frame_hr = np.zeros(( output_size*upsampling_factor, output_size*upsampling_factor))
+        frame_lr = np.zeros((output_size, output_size))
+
+        start = f*nPosPerFrame
+        end = (f+1)*nPosPerFrame
+        trajectory_segment = trajectory[start:end,:]
+        xtraj = trajectory_segment[:,0] * upsampling_factor
+        ytraj = trajectory_segment[:,1] * upsampling_factor
+
+        # Generate frame, convolution, resampling, noise
+        for p in range(nPosPerFrame):
+            frame_spot = gaussian_2d(xtraj[p], ytraj[p], gaussian_sigma, output_size*upsampling_factor, 
+                                        np.random.normal(particle_mean/nPosPerFrame,particle_std/nPosPerFrame))
+                
+            frame_hr += frame_spot
+        frame_lr = block_reduce(frame_hr, block_size=upsampling_factor, func=np.mean)
+        # Add Gaussian noise to background intensity across the image
+        frame_lr += frame_lr + np.clip(np.random.normal(background_mean, background_std, frame_lr.shape), 
+                                    0, background_mean + 3 * background_std)
+        out_video[f,:] = frame_lr
+
+
+
+
+
+
+
+
+
+
+
+import numpy as np
+from concurrent.futures import ProcessPoolExecutor
+import multiprocessing
+
+# Define this function at the module level, not nested inside another function
+def process_one_video(args):
+    """
+    Process a single video.
+    
+    Args:
+        args: Tuple containing (n, trajectories_n, nFrames, output_size, upsampling_factor, 
+              nPosPerFrame, gaussian_sigma, particle_mean, particle_std, 
+              background_mean, background_std)
+    
+    Returns:
+        Tuple of (n, video)
+    """
+    # Unpack arguments
+    (n, trajectory, nFrames, output_size, upsampling_factor, 
+     nPosPerFrame, gaussian_sigma, particle_mean, particle_std, 
+     background_mean, background_std) = args
+    
+    # Create a local array for this video
+    video = np.zeros((nFrames, output_size, output_size))
+    
+    # Call your existing function
+    trajectory_to_video(
+        video, trajectory, nFrames, output_size, upsampling_factor, 
+        nPosPerFrame, gaussian_sigma, particle_mean, particle_std, 
+        background_mean, background_std
+    )
+    
+    return n, video
+
+def generate_videos_parallel(trajectories, N, nFrames, output_size, upsampling_factor, 
+                            nPosPerFrame, gaussian_sigma, particle_mean, particle_std, 
+                            background_mean, background_std, max_workers=None):
+    """
+    Generate videos in parallel using ProcessPoolExecutor.
+    
+    Parameters:
+    - trajectories: Array of trajectories
+    - N: Number of videos to generate
+    - Other parameters as needed by trajectory_to_video
+    - max_workers: Maximum number of worker processes (defaults to number of CPU cores)
+    
+    Returns:
+    - out_videos: Array of generated videos
+    """
+    # Initialize output array
+    out_videos = np.zeros((N, nFrames, output_size, output_size))
+    
+    # If max_workers is None, use number of CPU cores
+    if max_workers is None:
+        max_workers = multiprocessing.cpu_count()
+    
+    # Prepare arguments for each video
+    args_list = [
+        (n, trajectories[n,:], nFrames, output_size, upsampling_factor, 
+         nPosPerFrame, gaussian_sigma, particle_mean, particle_std, 
+         background_mean, background_std) 
+        for n in range(N)
+    ]
+    
+    # Process videos in parallel
+    with ProcessPoolExecutor(max_workers=max_workers) as executor:
+        # Submit all tasks and collect results
+        results = list(executor.map(process_one_video, args_list))
+        
+        # Organize results
+        for n, video in results:
+            out_videos[n] = video
+    
+    return out_videos
+
+
+def trajectories_to_video2(
+    trajectories,
+    nPosPerFrame,
+    image_props={},
+):
+
+    
+    N,T,_ = trajectories.shape
+
+    if(T % nPosPerFrame != 0):
+        raise Exception("T is not divisble by posPerFrame")
+
+    nFrames = T // nPosPerFrame
+
+    _image_dict = {
+        "particle_intensity": [
+            500,
+            20,
+        ],  # Mean and standard deviation of the particle intensity
+        "NA": 1.46,  # Numerical aperture
+        "wavelength": 500e-9,  # Wavelength
+        "resolution": 100e-9,  # Camera resolution or effective resolution, aka pixelsize
+        "output_size": 32,
+        "upsampling_factor": 5,
+        "background_intensity": [
+            100,
+            10,
+        ],  # Standard deviation of background intensity within a video
+        "add_poisson_noise": True
+    }
+
+    # Update the dictionaries with the user-defined values
+    _image_dict.update(image_props)
+
+    output_size = _image_dict["output_size"]
+    upsampling_factor = _image_dict["upsampling_factor"]
+    # Psf is computed as 0.51 * wavelenght/NA according to:
+    fwhm_psf = 0.51 * _image_dict["wavelength"] / _image_dict["NA"]
+    gaussian_sigma = upsampling_factor* fwhm_psf/2.355/_image_dict["resolution"]
+
+    trajectories = trajectories 
+    
+    out_videos = np.zeros((N,nFrames,output_size,output_size))
+
+    # https://www.leica-microsystems.com/science-lab/life-science/microscope-resolution-concepts-factors-and-calculation/
+    particle_mean, particle_std = _image_dict["particle_intensity"][0],_image_dict["particle_intensity"][1]
+    background_mean, background_std = _image_dict["background_intensity"][0],_image_dict["background_intensity"][1]
+
+    out_videos = generate_videos_parallel(
+        trajectories, N, nFrames, output_size, upsampling_factor, nPosPerFrame,
+        gaussian_sigma, particle_mean, particle_std, background_mean, background_std
+    )
+
+    return out_videos

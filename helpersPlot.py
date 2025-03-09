@@ -98,6 +98,10 @@ def play_video(video, figsize=(5, 5), fps=5, vmin=None, vmax=None, save_path=Non
     """
     fig = plt.figure(figsize=figsize)
     images = []
+
+    if(len(video.shape) == 3):
+        video = np.expand_dims(video,axis=-1)
+
     plt.axis("off")
     
     # If vmin/vmax not provided, compute global min/max across all frames
@@ -105,7 +109,9 @@ def play_video(video, figsize=(5, 5), fps=5, vmin=None, vmax=None, save_path=Non
         vmin = np.min([frame[:, :, 0].min() for frame in video])
     if vmax is None:
         vmax = np.max([frame[:, :, 0].max() for frame in video])
-    print(f"vmin: {vmin} vmax: {vmax}")
+    mean = np.mean(video)
+
+    print(f"vmin: {vmin} vmax: {vmax} mean: {mean:.2f}")
 
     for image in video:
         images.append([plt.imshow(image[:, :, 0], cmap="gray", vmin=vmin, vmax=vmax)])
