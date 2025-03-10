@@ -124,6 +124,7 @@ def generateImages(trajectory, nframes, npixel, factor_hr, nposframe, fwhm_psf, 
 def trajectories_to_video(
     trajectories,
     nPosPerFrame,
+    center = False,
     image_props={},
 ):
     """
@@ -162,8 +163,12 @@ def trajectories_to_video(
             '`background_intensity`' : array_like[int, int]
                 Intensity of background given as mean and standard deviation.
             
-            '`add_poisson_noise`' : Boolean
-                If poisson noise should be added after all the other operations.
+            '`poisson_noise`' : float
+                If poisson noise should be added after all the other operations. if amount of noise specified is -1, no noise is added
+                Default value is 1, normal amount of poisson noise
+
+    center : Boolean
+        If each subframe should be centered around 0,0: making the particle always be in center of the image
 
     Returns
     -------
@@ -194,7 +199,7 @@ def trajectories_to_video(
             100,
             10,
         ],  # Standard deviation of background intensity within a video
-        "add_poisson_noise": True
+        "poisson_noise": -1
     }
 
     # Update the dictionaries with the user-defined values
@@ -205,7 +210,7 @@ def trajectories_to_video(
     # Psf is computed as 0.51 * wavelenght/NA according to:
     fwhm_psf = 0.51 * _image_dict["wavelength"] / _image_dict["NA"]
     gaussian_sigma = upsampling_factor* fwhm_psf/2.355/_image_dict["resolution"]
-
+    poisson_noise = _image_dict["poisson_noise"]
     trajectories = trajectories 
     
     out_videos = np.zeros((N,nFrames,output_size,output_size))
@@ -217,14 +222,13 @@ def trajectories_to_video(
     # n is for indexing the particle
     for n in range(N):
         trajectory_to_video(out_videos[n,:],trajectories[n,:],nFrames,output_size,upsampling_factor,nPosPerFrame,
-                                              gaussian_sigma,particle_mean,particle_std,background_mean,background_std)
-
+                                              gaussian_sigma,particle_mean,particle_std,background_mean,background_std, poisson_noise,center)
     return out_videos
 
 
+ 
 
-
-def trajectory_to_video(out_video,trajectory,nFrames, output_size, upsampling_factor, nPosPerFrame,gaussian_sigma,particle_mean,particle_std,background_mean,background_std):
+def trajectory_to_video(out_video,trajectory,nFrames, output_size, upsampling_factor, nPosPerFrame,gaussian_sigma,particle_mean,particle_std,background_mean,background_std, poisson_noise, center):
     """Helper function of function above, all arguments documented above"""
     for f in range(nFrames):
         frame_hr = np.zeros(( output_size*upsampling_factor, output_size*upsampling_factor))
@@ -232,9 +236,11 @@ def trajectory_to_video(out_video,trajectory,nFrames, output_size, upsampling_fa
 
         start = f*nPosPerFrame
         end = (f+1)*nPosPerFrame
-        trajectory_segment = trajectory[start:end,:]
-        xtraj = trajectory_segment[:,0] * upsampling_factor
+        trajectory_segment = trajectory[start:end,:] - trajectory[start,:] if center else trajectory[start:end,:]
+        xtraj = trajectory_segment[:,0]  * upsampling_factor
         ytraj = trajectory_segment[:,1] * upsampling_factor
+
+        
 
         # Generate frame, convolution, resampling, noise
         for p in range(nPosPerFrame):
@@ -246,6 +252,11 @@ def trajectory_to_video(out_video,trajectory,nFrames, output_size, upsampling_fa
         # Add Gaussian noise to background intensity across the image
         frame_lr += frame_lr + np.clip(np.random.normal(background_mean, background_std, frame_lr.shape), 
                                     0, background_mean + 3 * background_std)
+        
+        # Add poisson noise if specified
+        if poisson_noise != -1:
+            frame_lr = np.random.poisson(frame_lr * poisson_noise) / poisson_noise
+
         out_video[f,:] = frame_lr
 
 
