@@ -236,7 +236,7 @@ def trajectory_to_video(out_video,trajectory,nFrames, output_size, upsampling_fa
 
         start = f*nPosPerFrame
         end = (f+1)*nPosPerFrame
-        trajectory_segment = trajectory[start:end,:] - trajectory[start,:] if center else trajectory[start:end,:]
+        trajectory_segment = (trajectory[start:end,:] - trajectory[start,:] if center else trajectory[start:end,:]) 
         xtraj = trajectory_segment[:,0]  * upsampling_factor
         ytraj = trajectory_segment[:,1] * upsampling_factor
 
@@ -244,13 +244,17 @@ def trajectory_to_video(out_video,trajectory,nFrames, output_size, upsampling_fa
 
         # Generate frame, convolution, resampling, noise
         for p in range(nPosPerFrame):
-            frame_spot = gaussian_2d(xtraj[p], ytraj[p], gaussian_sigma, output_size*upsampling_factor, 
-                                        np.random.normal(particle_mean/nPosPerFrame,particle_std/nPosPerFrame))
-                
-            frame_hr += frame_spot
+            spot_intensity = np.random.normal(particle_mean/nPosPerFrame,particle_std/nPosPerFrame)
+            frame_spot = gaussian_2d(xtraj[p], ytraj[p], gaussian_sigma, output_size*upsampling_factor, spot_intensity)
+
+            # gaussian_2d maximum is not always the wanted one because of some misplaced pixels. 
+            # We can force the peak of the gaussian to have the right intensity
+            spot_max = np.max(frame_spot)
+            frame_hr += spot_intensity/spot_max * frame_spot
+        
         frame_lr = block_reduce(frame_hr, block_size=upsampling_factor, func=np.mean)
         # Add Gaussian noise to background intensity across the image
-        frame_lr += frame_lr + np.clip(np.random.normal(background_mean, background_std, frame_lr.shape), 
+        frame_lr += np.clip(np.random.normal(background_mean, background_std, frame_lr.shape), 
                                     0, background_mean + 3 * background_std)
         
         # Add poisson noise if specified
@@ -399,3 +403,49 @@ def trajectories_to_video2(
     )
 
     return out_videos
+
+
+
+
+def normalize_images(images, background_mean=None, background_sigma=None, theoretical_max=None):
+    """
+    Normalize images according to the formula:
+    im_norm = (im - (background_mean - background_sigma)) / (theoretical_max - (background_mean - background_sigma))
+    
+    Parameters:
+    ----------
+    images : numpy.ndarray
+        The images to normalize. Can be single image or batch with shape (..., height, width)
+    background_mean : float, optional
+        Mean of the background. If None, computed as np.mean(images)
+    background_sigma : float, optional
+        Standard deviation of the background. If None, computed as np.std(images)
+    theoretical_max : float, optional
+        Maximum theoretical value of particle that would not move. If None, computed as np.max(images)
+        
+    Returns:
+    -------
+    numpy.ndarray
+        Normalized images with same shape as input
+    """
+    
+    # Compute statistics if not provided
+    if background_mean is None:
+        background_mean = np.mean(images)
+    
+    if background_sigma is None:
+        background_sigma = np.std(images)
+    
+    if theoretical_max is None:
+        theoretical_max = np.max(images)
+    
+    # Apply normalization
+    denominator = theoretical_max - (background_mean - background_sigma)
+    
+    # Avoid division by zero
+    if denominator == 0:
+        raise ValueError("Denominator in normalization is zero. Check your inputs.")
+    
+    normalized = (images - (background_mean - background_sigma)) / denominator
+    
+    return normalized, (background_mean, background_sigma, theoretical_max)
