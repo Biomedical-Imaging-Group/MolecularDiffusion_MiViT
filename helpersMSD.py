@@ -129,6 +129,34 @@ def estimateDfromMSDs(msds, time_range):
     D_estimated = slopes / 4
     return D_estimated  # Shape (num_particles,)
 
+def estimateDfromMSDsWeighted(msds, time_range):
+    """
+    Estimates the diffusion coefficient (D) for multiple particles from MSD values
+    by weighting the lower msd values (using smaller tau) higher than the higher ones.
+    
+    Parameters:
+    - msds (numpy array): 2D array of shape (num_particles, msd_len) containing MSD values
+                           for multiple particles.
+    - time_range (numpy array): 1D array of time values corresponding to MSD.
+    
+    Returns:
+    - D_estimated (numpy array): 1D array of estimated diffusion coefficients for each particle.
+    """
+    T = msds.shape[1]
+    # weights to multiply each position with to weitgh smaller values of tau more
+    weights = np.arange(T,0,-1)
+
+    # weigths to divide the values of masds, since they are proportional to tao
+    div_weights = np.arange(0,T)
+    # Avoid division by 0, putting one does not change anything since msds[0,:] = 0
+    div_weights[0] = 1
+    # Element-wise multiplication - divide each MSD value by its corresponding tau
+    # This turns MSD into an approximation of the diffusion coefficient at each tau
+    normalized_msds = msds / div_weights[np.newaxis, :]
+
+    r = normalized_msds @ weights
+    return r / np.sum(weights) /4 # Shape (num_particles,)
+
 
 def estimateDfromMSDs2(msds, time_range):
     """
