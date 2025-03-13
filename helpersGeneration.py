@@ -160,6 +160,7 @@ def trajectories_to_video(
 
             "upsampling_factor": int
                 Upsampling factor used when generating the image, before reducing to final size
+                
             '`background_intensity`' : array_like[int, int]
                 Intensity of background given as mean and standard deviation.
             
@@ -199,7 +200,7 @@ def trajectories_to_video(
             100,
             10,
         ],  # Standard deviation of background intensity within a video
-        "poisson_noise": -1
+        "poisson_noise": 1
     }
 
     # Update the dictionaries with the user-defined values
@@ -236,7 +237,7 @@ def trajectory_to_video(out_video,trajectory,nFrames, output_size, upsampling_fa
 
         start = f*nPosPerFrame
         end = (f+1)*nPosPerFrame
-        trajectory_segment = (trajectory[start:end,:] - trajectory[start,:] if center else trajectory[start:end,:]) 
+        trajectory_segment = (trajectory[start:end,:] - np.mean(trajectory[start:end,:],axis=0) if center else trajectory[start:end,:]) 
         xtraj = trajectory_segment[:,0]  * upsampling_factor
         ytraj = trajectory_segment[:,1] * upsampling_factor
 
