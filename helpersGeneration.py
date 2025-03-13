@@ -160,13 +160,19 @@ def trajectories_to_video(
 
             "upsampling_factor": int
                 Upsampling factor used when generating the image, before reducing to final size
-                
+
             '`background_intensity`' : array_like[int, int]
                 Intensity of background given as mean and standard deviation.
             
             '`poisson_noise`' : float
                 If poisson noise should be added after all the other operations. if amount of noise specified is -1, no noise is added
                 Default value is 1, normal amount of poisson noise
+            
+            '`trajectory_unit`' : String
+                Unit of the trajectory, either pixels, which means the trajectory will not be divided by the resolution, or nm (standard value 100nm) which means the trajectory will be divided by resolution. 
+                The trajectory is supposed to be given in 100nm unit, meaning x=1 is a displacement of 100nm
+                For example if the unit is 100nm and the resolution is 200nm, the trajectory will be divided by 2, resulting in smaller displacement on screen. 
+                'nm' is the standard value standing for 100nm, to use pixels use 'pixels'.
 
     center : Boolean
         If each subframe should be centered around 0,0: making the particle always be in center of the image
@@ -200,17 +206,25 @@ def trajectories_to_video(
             100,
             10,
         ],  # Standard deviation of background intensity within a video
-        "poisson_noise": 1
+        "poisson_noise": 1,
+        "trajectory_unit" : 'nm'
     }
 
     # Update the dictionaries with the user-defined values
     _image_dict.update(image_props)
+    resolution =_image_dict["resolution"]
+    traj_unit = _image_dict["trajectory_unit"]
+    if(traj_unit not in ['nm','pixels']):
+        raise Exception("Either use nm or pixels as 'trajectory_unit'")
+    
+    if(traj_unit == 'nm'):
+        trajectories = trajectories * 100e-9 / resolution
 
     output_size = _image_dict["output_size"]
     upsampling_factor = _image_dict["upsampling_factor"]
     # Psf is computed as 0.51 * wavelenght/NA according to:
     fwhm_psf = 0.51 * _image_dict["wavelength"] / _image_dict["NA"]
-    gaussian_sigma = upsampling_factor* fwhm_psf/2.355/_image_dict["resolution"]
+    gaussian_sigma = upsampling_factor* fwhm_psf/2.355/resolution
     poisson_noise = _image_dict["poisson_noise"]
     trajectories = trajectories 
     
