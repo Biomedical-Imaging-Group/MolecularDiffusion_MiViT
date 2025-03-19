@@ -159,3 +159,77 @@ class GeneralTransformer(nn.Module):
 
 
 
+def get_transformer_models(patch_size, embed_dim, num_heads, hidden_dim, num_layers, dropout, use_pos_encoding = False, tr_activation_fct='gelu', use_regression_token=True ,name_suffix = ''):
+    """
+    Returns different variants of the GeneralTransformer model.
+    """
+    embed_kwargs = {"patch_size": patch_size, "embed_dim": embed_dim}
+    
+    # Define MLP heads
+    twoLayerMLP = nn.Sequential(
+        nn.Linear(embed_dim, hidden_dim),
+        nn.ReLU(),
+        nn.Linear(hidden_dim, 1)  # Output a single scalar value
+    )
+
+    oneLayerMLP = nn.Sequential(
+        nn.Linear(embed_dim, 1)  # Output a single scalar value
+    )
+
+    # Define model instances
+    models = {
+        "linear_2layer" + name_suffix: GeneralTransformer(
+            embedding_cls=LinearProjectionEmbedding,
+            embed_kwargs=embed_kwargs,
+            embed_dim=embed_dim,
+            num_heads=num_heads,
+            hidden_dim=hidden_dim,
+            num_layers=num_layers,
+            mlp_head=twoLayerMLP,
+            dropout=dropout,
+            use_pos_encoding=use_pos_encoding,
+            tr_activation_fct=tr_activation_fct,
+            use_regression_token=use_regression_token
+        ),
+        "linear_1layer"+ name_suffix: GeneralTransformer(
+            embedding_cls=LinearProjectionEmbedding,
+            embed_kwargs=embed_kwargs,
+            embed_dim=embed_dim,
+            num_heads=num_heads,
+            hidden_dim=hidden_dim,
+            num_layers=num_layers,
+            mlp_head=oneLayerMLP,
+            dropout=dropout,
+            use_pos_encoding=use_pos_encoding,
+            tr_activation_fct=tr_activation_fct,
+            use_regression_token=use_regression_token
+        ),
+        "cnn_1layer"+ name_suffix: GeneralTransformer(
+            embedding_cls=CNNEmbedding,
+            embed_kwargs=embed_kwargs,
+            embed_dim=embed_dim,
+            num_heads=num_heads,
+            hidden_dim=hidden_dim,
+            num_layers=num_layers,
+            mlp_head=oneLayerMLP,
+            dropout=dropout,
+            use_pos_encoding=use_pos_encoding,
+            tr_activation_fct=tr_activation_fct,
+            use_regression_token=use_regression_token
+        ),
+        "deepcnn_1layer"+ name_suffix: GeneralTransformer(
+            embedding_cls=DeepCNNEmbedding,
+            embed_kwargs=embed_kwargs,
+            embed_dim=embed_dim,
+            num_heads=num_heads,
+            hidden_dim=hidden_dim,
+            num_layers=num_layers,
+            mlp_head=oneLayerMLP,
+            dropout=dropout,
+            use_pos_encoding=use_pos_encoding,
+            tr_activation_fct=tr_activation_fct,
+            use_regression_token=use_regression_token
+        )
+    }
+    
+    return models
