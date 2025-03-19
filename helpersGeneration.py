@@ -168,11 +168,11 @@ def trajectories_to_video(
                 If poisson noise should be added after all the other operations. if amount of noise specified is -1, no noise is added
                 Default value is 1, normal amount of poisson noise
             
-            '`trajectory_unit`' : String
-                Unit of the trajectory, either pixels, which means the trajectory will not be divided by the resolution, or nm (standard value 100nm) which means the trajectory will be divided by resolution. 
+            '`trajectory_unit`' : int
+                Unit of the trajectory, -1: pixels , which means the trajectory will not be divided by the resolution, or positive int value (standard value 100nm) which means the trajectory will be divided by resolution. 
                 The trajectory is supposed to be given in 100nm unit, meaning x=1 is a displacement of 100nm
                 For example if the unit is 100nm and the resolution is 200nm, the trajectory will be divided by 2, resulting in smaller displacement on screen. 
-                'nm' is the standard value standing for 100nm, to use pixels use 'pixels'.
+                100 is the standard value standing for 100nm, to use pixels use -1.
 
     center : Boolean
         If each subframe should be centered around 0,0: making the particle always be in center of the image
@@ -207,28 +207,27 @@ def trajectories_to_video(
             10,
         ],  # Standard deviation of background intensity within a video
         "poisson_noise": 1,
-        "trajectory_unit" : 'nm'
+        "trajectory_unit" : 100
     }
 
     # Update the dictionaries with the user-defined values
     _image_dict.update(image_props)
     resolution =_image_dict["resolution"]
     traj_unit = _image_dict["trajectory_unit"]
-    if(traj_unit not in ['nm','pixels']):
-        raise Exception("Either use nm or pixels as 'trajectory_unit'")
     
-    if(traj_unit == 'nm'):
-        trajectories = trajectories * 100e-9 / resolution
+    if(traj_unit !=-1 ):
+        trajectories = trajectories * traj_unit* 1e-9 / resolution
 
     output_size = _image_dict["output_size"]
     upsampling_factor = _image_dict["upsampling_factor"]
+    
     # Psf is computed as 0.51 * wavelenght/NA according to:
     fwhm_psf = 0.51 * _image_dict["wavelength"] / _image_dict["NA"]
     gaussian_sigma = upsampling_factor* fwhm_psf/2.355/resolution
     poisson_noise = _image_dict["poisson_noise"]
     trajectories = trajectories 
     
-    out_videos = np.zeros((N,nFrames,output_size,output_size))
+    out_videos = np.zeros((N,nFrames,output_size,output_size),np.float32)
 
     # https://www.leica-microsystems.com/science-lab/life-science/microscope-resolution-concepts-factors-and-calculation/
     particle_mean, particle_std = _image_dict["particle_intensity"][0],_image_dict["particle_intensity"][1]
@@ -246,8 +245,8 @@ def trajectories_to_video(
 def trajectory_to_video(out_video,trajectory,nFrames, output_size, upsampling_factor, nPosPerFrame,gaussian_sigma,particle_mean,particle_std,background_mean,background_std, poisson_noise, center):
     """Helper function of function above, all arguments documented above"""
     for f in range(nFrames):
-        frame_hr = np.zeros(( output_size*upsampling_factor, output_size*upsampling_factor))
-        frame_lr = np.zeros((output_size, output_size))
+        frame_hr = np.zeros(( output_size*upsampling_factor, output_size*upsampling_factor),np.float32)
+        frame_lr = np.zeros((output_size, output_size),np.float32)
 
         start = f*nPosPerFrame
         end = (f+1)*nPosPerFrame
