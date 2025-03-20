@@ -156,6 +156,121 @@ class GeneralTransformer(nn.Module):
             avg_tokens = x.mean(dim=1)  # [batch_size, embed_dim], average over the sequence
             return self.mlp_head(avg_tokens)  # Pass averaged output through MLP head
 
+class BasicBlock(nn.Module):
+    expansion = 1
+    def __init__(self, in_channels, out_channels, stride=1):
+        super().__init__()
+        self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=stride, padding=1, bias=False)
+        self.bn1 = nn.BatchNorm2d(out_channels)
+        self.relu1 = nn.ReLU(inplace=True)
+        self.conv2 = nn.Conv2d(out_channels, out_channels, kernel_size=3, stride=1, padding=1, bias=False)
+        self.bn2 = nn.BatchNorm2d(out_channels)
+        self.relu2 = nn.ReLU(inplace=True)
+        
+        self.shortcut = nn.Sequential()
+        if stride != 1 or in_channels != out_channels:
+            self.shortcut = nn.Sequential(
+                nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=stride, bias=False),
+                nn.BatchNorm2d(out_channels)
+            )
+
+    def forward(self, x):
+        identity = x
+        
+        out = self.conv1(x)
+        out = self.bn1(out)
+        out = self.relu1(out)
+        
+        out = self.conv2(out)
+        out = self.bn2(out)
+        
+        out += self.shortcut(identity)
+        out = self.relu2(out)
+        
+        return out
+
+class LightResNet(nn.Module):
+    def __init__(self, block, num_blocks, num_classes=1, feature_size=64):
+        super().__init__()
+        self.in_channels = 32  # Reduced from 64
+        
+        # Always use 1 input channel for grayscale
+        self.conv1 = nn.Conv2d(1, 32, kernel_size=5, stride=2, padding=2, bias=False)  # Smaller kernel
+        self.bn1 = nn.BatchNorm2d(32)
+        self.relu = nn.ReLU(inplace=True)
+        self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
+        
+        self.layer1 = self._make_layer(block, 32, num_blocks[0], stride=1)  # 32 channels
+        self.layer2 = self._make_layer(block, 64, num_blocks[1], stride=2)   # 64 channels
+        self.layer3 = self._make_layer(block, 128, num_blocks[2], stride=2)  # Max of 128 channels
+        
+        self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
+        
+        # Define the fully connected layers
+        self.feature_size = feature_size
+        self.fc1 = nn.Linear(128 * block.expansion, self.feature_size)
+        self.fc_relu = nn.ReLU(inplace=True)
+        self.fc2 = nn.Linear(self.feature_size, num_classes)
+
+    def _make_layer(self, block, out_channels, num_blocks, stride):
+        strides = [stride] + [1] * (num_blocks - 1)
+        layers = []
+        for stride in strides:
+            layers.append(block(self.in_channels, out_channels, stride))
+            self.in_channels = out_channels * block.expansion
+        return nn.Sequential(*layers)
+
+    def forward(self, x):
+        # Print input shape for debugging
+        # print(f"Input shape: {x.shape}")
+        
+        out = self.conv1(x)
+        out = self.bn1(out)
+        out = self.relu(out)
+        out = self.maxpool(out)
+        
+        out = self.layer1(out)
+        out = self.layer2(out)
+        out = self.layer3(out)
+        
+        out = self.avgpool(out)
+        # print(f"Shape after avgpool: {out.shape}")
+        
+        out = torch.flatten(out, 1)
+        # print(f"Shape after flatten: {out.shape}")
+        
+        # Two-layer output with ReLU
+        out = self.fc1(out)
+        out = self.fc_relu(out)
+        out = self.fc2(out)
+        
+        return out
+
+class MultiImageLightResNet(nn.Module):
+    def __init__(self, image_size, num_classes=1):
+        super().__init__()
+        # Create a lightweight ResNet backbone with fewer blocks
+        self.resnet = LightResNet(BasicBlock, [1, 1, 1],num_classes)  # Just 1 block per layer
+        
+    def forward(self, x):
+        # Input shape: [B, num_images, H, W]
+        batch_size, num_images, height, width = x.shape
+        
+        # Reshape to process each image independently
+        # Add channel dimension for grayscale images
+        x = x.view(batch_size * num_images, 1, height, width)  # [B*num_images, 1, H, W]
+        
+        # Process through ResNet
+        x = self.resnet(x)  # [B*num_images, 1]
+        
+        # Reshape back to separate batch and num_images
+        x = x.view(batch_size, num_images)
+        
+        # Average over num_images dimension
+        x = torch.mean(x, dim=1, keepdim=True)  # [B, 1]
+        
+        return x
+
 
 
 
