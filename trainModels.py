@@ -3,8 +3,8 @@ from andi_datasets.models_phenom import models_phenom
 from helpersGeneration import *
 from helpersPlot import *
 from models import get_transformer_models
-
-
+import datetime
+print(datetime.datetime.now())
 verbose = False
 
 # need to divide trajectories because they are given in pixels/s but we want trajectories in ms domain
@@ -76,15 +76,15 @@ image_props={"upsampling_factor":10,
 
 
 
-num_cycles = 2  # Number of dataset refreshes
-batch_size = 32
+num_cycles = 100  # Number of dataset refreshes
+batch_size = 64
 
 
 
 # number of time steps per trajectory (frames), will be divided by nPosPerFrame
 T = 200
 # number of trajectories
-N = 32
+N = 512
 
 TrainingDs_list = [[1, 1], [3, 1], [5, 1], [7, 1]]
 
@@ -181,3 +181,4 @@ results = {
 }
 torch.save(results, save_path)
 print(f"\nTraining results saved to {save_path}")
+print(datetime.datetime.now())
