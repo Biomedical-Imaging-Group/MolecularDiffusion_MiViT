@@ -1,5 +1,10 @@
 import numpy as np
-import matplotlib as plt
+import numpy as np
+from concurrent.futures import ProcessPoolExecutor
+import multiprocessing
+from andi_datasets.models_phenom import models_phenom
+
+
 
 def brownian_motion(nparticles, nframes, nposframe, D, dt, startAtZero=False):
 
@@ -221,8 +226,8 @@ def trajectories_to_video(
     output_size = _image_dict["output_size"]
     upsampling_factor = _image_dict["upsampling_factor"]
     
-    # Psf is computed as 0.51 * wavelenght/NA according to:
-    fwhm_psf = 0.51 * _image_dict["wavelength"] / _image_dict["NA"]
+    # Psf is computed as 0.61 * wavelenght/NA according to:
+    fwhm_psf = 0.61 * _image_dict["wavelength"] / _image_dict["NA"]
     gaussian_sigma = upsampling_factor* fwhm_psf/2.355/resolution
     poisson_noise = _image_dict["poisson_noise"]
     trajectories = trajectories 
@@ -264,6 +269,8 @@ def trajectory_to_video(out_video,trajectory,nFrames, output_size, upsampling_fa
             # gaussian_2d maximum is not always the wanted one because of some misplaced pixels. 
             # We can force the peak of the gaussian to have the right intensity
             spot_max = np.max(frame_spot)
+            if(spot_max < 0.00001):
+                print("merde")
             frame_hr += spot_intensity/spot_max * frame_spot
         
         frame_lr = block_reduce(frame_hr, block_size=upsampling_factor, func=np.mean)
@@ -277,19 +284,6 @@ def trajectory_to_video(out_video,trajectory,nFrames, output_size, upsampling_fa
 
         out_video[f,:] = frame_lr
 
-
-
-
-
-
-
-
-
-
-
-import numpy as np
-from concurrent.futures import ProcessPoolExecutor
-import multiprocessing
 
 # Define this function at the module level, not nested inside another function
 def process_one_video(args):
@@ -463,3 +457,18 @@ def normalize_images(images, background_mean=None, background_sigma=None, theore
     normalized = (images - (background_mean - background_sigma)) / denominator
     
     return normalized, (background_mean, background_sigma, theoretical_max)
+
+def generateTrajAndVideosBrownian(Ds,nPart,nImages,nPosPerFrame,optics_props):
+    trajs, labels = models_phenom().single_state(nPart, 
+                                    L = 0,
+                                    T = nImages * nPosPerFrame,
+                                    Ds = Ds, # Mean and variance
+                                    alphas = 1)
+    
+    trajs = trajs.transpose(1,0,2)
+    labels = labels.transpose(1,0,2)
+
+    videos = trajectories_to_video(trajs, nPosPerFrame,True,optics_props)   
+
+    return videos, labels[:,0,1]
+

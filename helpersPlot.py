@@ -4,8 +4,6 @@ import matplotlib.animation as animation
 import matplotlib.pyplot as plt
 from IPython.display import HTML
 import numpy as np
-import imageio
-from PIL import Image
 
 def plot1ParticleTrajectory(trajectory, nframes, D):
     """

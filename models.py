@@ -1,5 +1,8 @@
 import torch
 import torch.nn as nn
+from torch.utils.data import Dataset, DataLoader
+import torch.optim as optim
+import numpy as np
 
 MAX_TOKENS = 128  # Assume that we will use maximally 100 tokens
 
@@ -348,3 +351,28 @@ def get_transformer_models(patch_size, embed_dim, num_heads, hidden_dim, num_lay
     }
     
     return models
+
+
+
+
+
+
+
+
+
+# Helpers used for training:  
+
+
+class ImageDataset(Dataset):
+    def __init__(self, images, labels):
+        self.images = images  # Shape (N, C, H, W)
+        self.labels = labels  # Shape (N, 1)
+
+    def __len__(self):
+        return len(self.images)
+
+    def __getitem__(self, idx):
+        return self.images[idx], self.labels[idx]
+    
+
+
