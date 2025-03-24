@@ -59,7 +59,7 @@ models.update({"resnet": resnet})
 optimizers = {name: optim.AdamW(model.parameters(), lr=1e-4) for name, model in models.items()}
 schedulers = {name: optim.lr_scheduler.StepLR(opt, step_size=5, gamma=0.9) for name, opt in optimizers.items()}
 print(models.keys())
-loss_function = nn.SmoothL1Loss()
+loss_function = nn.MSELoss()
 
 
 
@@ -78,10 +78,10 @@ image_props={"upsampling_factor":10,
 
 
 
-verbose = True
+verbose = False
 
-num_cycles = 20  # Number of dataset refreshes
-batch_size = 32
+num_cycles = 50  # Number of dataset refreshes
+batch_size = 16
 
 
 

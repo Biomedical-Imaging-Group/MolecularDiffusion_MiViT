@@ -133,7 +133,7 @@ class Transformer(nn.Module):
             )
             for _ in range(num_layers)
         ])
-        
+
         self.norm = nn.LayerNorm(embed_dim)
 
     def forward(self, x):
@@ -202,25 +202,61 @@ class CNNEmbedding(nn.Module):
         return x
 
 
-class DeepCNNEmbedding(nn.Module):
+class ResidualBlock(nn.Module):
+    def __init__(self, in_channels, out_channels, downsample=False):
+        super().__init__()
+        stride = 2 if downsample else 1
+        self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1, stride=stride, bias=False)
+        self.bn1 = nn.BatchNorm2d(out_channels)
+        self.relu = nn.ReLU(inplace=True)
+        self.conv2 = nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1, stride=1, bias=False)
+        self.bn2 = nn.BatchNorm2d(out_channels)
+
+        # Skip connection projection if dimensions mismatch
+        self.skip = nn.Sequential()
+        if in_channels != out_channels or downsample:
+            self.skip = nn.Sequential(
+                nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=stride, bias=False),
+                nn.BatchNorm2d(out_channels)
+            )
+
+    def forward(self, x):
+        identity = self.skip(x)
+        out = self.conv1(x)
+        out = self.bn1(out)
+        out = self.relu(out)
+        out = self.conv2(out)
+        out = self.bn2(out)
+        out += identity  # Skip connection
+        return self.relu(out)
+
+class DeepResNetEmbedding(nn.Module):
     def __init__(self, patch_size=7, embed_dim=128):
         super().__init__()
-        self.conv_layers = nn.Sequential(
-            nn.Conv2d(1, 32, kernel_size=3, padding=1),  # (B, num_images, 7, 7) -> (B, num_images, 7, 7)
-            nn.ReLU(),
-            nn.Conv2d(32, 64, kernel_size=3, padding=1),
-            nn.ReLU(),
-            nn.Conv2d(64, 128, kernel_size=3, padding=1),
-            nn.ReLU(),
-            nn.AdaptiveAvgPool2d((1, 1))  # Global pooling to reduce spatial dims
-        )
+        self.initial_conv = nn.Conv2d(1, 32, kernel_size=3, padding=1, bias=False)
+        self.bn1 = nn.BatchNorm2d(32)
+        self.relu = nn.ReLU(inplace=True)
+
+        self.res_block1 = ResidualBlock(32, 64)
+        self.res_block2 = ResidualBlock(64, 128)
+
+        self.global_pool = nn.AdaptiveAvgPool2d((1, 1))  # Global pooling to reduce spatial dims
         self.fc = nn.Linear(128, embed_dim)  # Project to embed_dim
 
     def forward(self, x):
-        batch_size, num_images, h, w = x.shape  # Expect (B, num_images, 7, 7)
+        batch_size, num_images, h, w = x.shape
         x = x.view(batch_size * num_images, 1, h, w)  # Flatten num_images into batch
-        x = self.conv_layers(x)  # (B * num_images, 128, 1, 1)
+
+        x = self.initial_conv(x)
+        x = self.bn1(x)
+        x = self.relu(x)
+
+        x = self.res_block1(x)
+        x = self.res_block2(x)
+
+        x = self.global_pool(x)  # (B * num_images, 128, 1, 1)
         x = x.view(batch_size, num_images, -1)  # Reshape back: (B, num_images, 128)
+        
         return self.fc(x)  # Final projection to embed_dim
     
 
@@ -391,7 +427,7 @@ class MultiImageLightResNet(nn.Module):
 
 
 
-def get_transformer_models(patch_size, embed_dim, num_heads, hidden_dim, num_layers, dropout, use_pos_encoding = False, tr_activation_fct='gelu', use_regression_token=False ,name_suffix = ''):
+def get_transformer_models(patch_size, embed_dim, num_heads, hidden_dim, num_layers, dropout, use_pos_encoding = False, tr_activation_fct='gelu', use_regression_token=True ,name_suffix = ''):
     """
     Returns different variants of the GeneralTransformer model.
     """
@@ -450,13 +486,39 @@ def get_transformer_models(patch_size, embed_dim, num_heads, hidden_dim, num_lay
             use_regression_token=use_regression_token
         ),
         "deepcnn_1layer"+ name_suffix: GeneralTransformer(
-            embedding_cls=DeepCNNEmbedding,
+            embedding_cls=DeepResNetEmbedding,
             embed_kwargs=embed_kwargs,
             embed_dim=embed_dim,
             num_heads=num_heads,
             hidden_dim=hidden_dim,
             num_layers=num_layers,
             mlp_head=oneLayerMLP,
+            dropout=dropout,
+            use_pos_encoding=use_pos_encoding,
+            tr_activation_fct=tr_activation_fct,
+            use_regression_token=use_regression_token
+        ),
+        "cnn_2layer"+ name_suffix: GeneralTransformer(
+            embedding_cls=CNNEmbedding,
+            embed_kwargs=embed_kwargs,
+            embed_dim=embed_dim,
+            num_heads=num_heads,
+            hidden_dim=hidden_dim,
+            num_layers=num_layers,
+            mlp_head=twoLayerMLP,
+            dropout=dropout,
+            use_pos_encoding=use_pos_encoding,
+            tr_activation_fct=tr_activation_fct,
+            use_regression_token=use_regression_token
+        ),
+        "deepcnn_2layer"+ name_suffix: GeneralTransformer(
+            embedding_cls=DeepResNetEmbedding,
+            embed_kwargs=embed_kwargs,
+            embed_dim=embed_dim,
+            num_heads=num_heads,
+            hidden_dim=hidden_dim,
+            num_layers=num_layers,
+            mlp_head=twoLayerMLP,
             dropout=dropout,
             use_pos_encoding=use_pos_encoding,
             tr_activation_fct=tr_activation_fct,
