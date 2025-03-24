@@ -5,7 +5,6 @@ from helpersPlot import *
 from models import get_transformer_models
 import datetime
 print(datetime.datetime.now())
-verbose = False
 
 # need to divide trajectories because they are given in pixels/s but we want trajectories in ms domain
 traj_div_factor = 100
@@ -45,17 +44,22 @@ dropout = 0.0
 
 # Get all transformer models, _s stands for small, _b for big models
 models = get_transformer_models(patch_size, embed_dim, num_heads, hidden_dim, num_layers, dropout,name_suffix='_s')
-models_big = get_transformer_models(patch_size, embed_dim*2, num_heads*2, hidden_dim*2, num_layers*2, dropout,name_suffix='_b')
+#models_big = get_transformer_models(patch_size, embed_dim*2, num_heads*2, hidden_dim*2, num_layers*2, dropout,name_suffix='_b')
+#models.update(models_big)
 
-models.update(models_big)
+
+
+models_very_small = get_transformer_models(patch_size, embed_dim//2, num_heads//2, hidden_dim//2, num_layers//2, dropout,name_suffix='_vs')
+models.update(models_very_small)
+
 resnet = MultiImageLightResNet(patch_size)
 models.update({"resnet": resnet})
 
 # Create 1 optimizer and scheuler for each model
-optimizers = {name: optim.Adam(model.parameters(), lr=1e-3) for name, model in models.items()}
+optimizers = {name: optim.AdamW(model.parameters(), lr=1e-4) for name, model in models.items()}
 schedulers = {name: optim.lr_scheduler.StepLR(opt, step_size=5, gamma=0.9) for name, opt in optimizers.items()}
 print(models.keys())
-loss_function = nn.MSELoss()
+loss_function = nn.SmoothL1Loss()
 
 
 
@@ -69,22 +73,22 @@ image_props={"upsampling_factor":10,
       "resolution": 100e-9,
       "trajectory_unit" : 1000,
       "output_size": 7,
-      "poisson_noise" : -1
-        }
+      "poisson_noise" : -1}
 
 
 
 
+verbose = True
 
-num_cycles = 100  # Number of dataset refreshes
-batch_size = 64
+num_cycles = 20  # Number of dataset refreshes
+batch_size = 32
 
 
 
 # number of time steps per trajectory (frames), will be divided by nPosPerFrame
 T = 200
 # number of trajectories
-N = 512
+N = 64
 
 TrainingDs_list = [[1, 1], [3, 1], [5, 1], [7, 1]]
 
@@ -95,6 +99,8 @@ val_labels = torch.tensor([1, 3, 5, 7], dtype=torch.float32)  # Corresponding la
 
 # Dictionary to store validation losses per model and dataset type
 validation_losses = {name: {f"val_{label.item()}": [] for label in val_labels} for name in models.keys()}
+for models_name in validation_losses.keys():
+    validation_losses[models_name].update({"val_avg":[]})
 
 # create all_labels to be saved later
 all_gen_labels = np.array([])  # Empty array to start
@@ -102,7 +108,8 @@ all_gen_labels = np.array([])  # Empty array to start
 
 for cycle in range(num_cycles):
 
-    # Generate a new batch of 2000 images and labels
+    print(f"Cycle {cycle+1} out of {num_cycles}: {(cycle+1)/num_cycles * 100:.2f}%")
+    # Generate a new batch of images and labels
     all_videos = []
     all_labels = []
 
@@ -142,6 +149,7 @@ for cycle in range(num_cycles):
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
 
     for name, model in models.items():
+
         model.train()
         optimizer = optimizers[name]
         scheduler = schedulers[name]
@@ -155,7 +163,32 @@ for cycle in range(num_cycles):
 
         # Step the learning rate scheduler after training
         scheduler.step()
+        
+        if(verbose):
+            for p_name, param in model.named_parameters():
+                if param.grad is not None:
+                    print(f"{name}: {p_name}: Mean : {param.grad.abs().mean().item():.8f} Max:  {param.grad.abs().max().item():.8f}")
+                    #print(model.reg_token)
 
+
+    for name, model in models.items():
+        model.eval()
+        with torch.no_grad():
+            label_losses = []
+            for vid, label in zip(val_videos, val_labels):
+                val_predictions = model(vid)
+                val_loss = loss_function(val_predictions, 
+                                        torch.full((vid.shape[0],), label).view(-1, 1))
+                avg_val_loss = val_loss.item()
+                validation_losses[name][f"val_{label.item()}"].append(avg_val_loss)
+                if(verbose):
+                    print(f"{name} on val_{label.item()}: Validation Loss = {avg_val_loss:.4f}")
+                label_losses.append(avg_val_loss)
+            # Compute average across all labels
+            avg_val_avg = np.mean(label_losses)  # Use numpy for mean calculation
+            validation_losses[name]["val_avg"].append(avg_val_avg)
+            if(verbose):
+                print(f"{name} on val_avg: Validation Loss = {avg_val_avg:.4f}")
         # --- Validation Phase ---
     for name, model in models.items():
 

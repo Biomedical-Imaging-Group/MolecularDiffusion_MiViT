@@ -3,8 +3,112 @@ import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader
 import torch.optim as optim
 import numpy as np
+import torch.nn.functional as F
 
 MAX_TOKENS = 128  # Assume that we will use maximally 100 tokens
+
+# --------------- Custom Multi-Head Attention --------------- #
+class MultiHeadAttention(nn.Module):
+    def __init__(self, embed_dim, num_heads, dropout=0.0):
+        super().__init__()
+        self.embed_dim = embed_dim
+        self.num_heads = num_heads
+        self.head_dim = embed_dim // num_heads
+        assert self.head_dim * num_heads == embed_dim, "embed_dim must be divisible by num_heads"
+        
+        # Linear projections for Q, K, V
+        self.q_proj = nn.Linear(embed_dim, embed_dim)
+        self.k_proj = nn.Linear(embed_dim, embed_dim)
+        self.v_proj = nn.Linear(embed_dim, embed_dim)
+        self.out_proj = nn.Linear(embed_dim, embed_dim)
+        
+        self.dropout = nn.Dropout(dropout)
+        
+        # Initialize parameters with Glorot / fan_avg
+        nn.init.xavier_uniform_(self.q_proj.weight)
+        nn.init.xavier_uniform_(self.k_proj.weight)
+        nn.init.xavier_uniform_(self.v_proj.weight)
+        nn.init.xavier_uniform_(self.out_proj.weight)
+    
+    def forward(self, x, mask=None):
+        batch_size = x.shape[0]
+        
+        # Linear projections and reshape
+        q = self.q_proj(x).view(batch_size, -1, self.num_heads, self.head_dim).transpose(1, 2)
+        k = self.k_proj(x).view(batch_size, -1, self.num_heads, self.head_dim).transpose(1, 2)
+        v = self.v_proj(x).view(batch_size, -1, self.num_heads, self.head_dim).transpose(1, 2)
+        
+        # Scaled dot-product attention
+        scores = torch.matmul(q, k.transpose(-2, -1)) / np.sqrt(self.head_dim)
+        
+        if mask is not None:
+            scores = scores.masked_fill(mask == 0, -1e9)
+        
+        attn_weights = F.softmax(scores, dim=-1)
+        attn_weights = self.dropout(attn_weights)
+        
+        # Apply attention weights to values
+        context = torch.matmul(attn_weights, v)
+        
+        # Reshape and concat heads
+        context = context.transpose(1, 2).contiguous().view(batch_size, -1, self.embed_dim)
+        
+        # Final projection
+        output = self.out_proj(context)
+        
+        return output
+
+# --------------- Feed Forward Network --------------- #
+class FeedForward(nn.Module):
+    def __init__(self, embed_dim, hidden_dim, dropout=0.0, activation_fct='gelu'):
+        super().__init__()
+        self.fc1 = nn.Linear(embed_dim, hidden_dim)
+        self.fc2 = nn.Linear(hidden_dim, embed_dim)
+        self.dropout = nn.Dropout(dropout)
+        
+        if activation_fct == 'gelu':
+            self.activation = F.gelu
+        elif activation_fct == 'relu':
+            self.activation = F.relu
+        else:
+            raise ValueError(f"Unsupported activation function: {activation_fct}")
+    
+    def forward(self, x):
+        x = self.fc1(x)
+        x = self.activation(x)
+        x = self.dropout(x)
+        x = self.fc2(x)
+        return x
+
+# --------------- Transformer Encoder Layer with Skip Connections --------------- #
+class TransformerEncoderLayerWithSkip(nn.Module):
+    def __init__(self, embed_dim, num_heads, hidden_dim, dropout=0.0, activation_fct='gelu'):
+        super().__init__()
+        # Multi-head attention
+        self.self_attn = MultiHeadAttention(embed_dim, num_heads, dropout)
+        
+        # Normalization layers
+        self.norm1 = nn.LayerNorm(embed_dim)
+        self.norm2 = nn.LayerNorm(embed_dim)
+        
+        # Feed-forward network
+        self.feed_forward = FeedForward(embed_dim, hidden_dim, dropout, activation_fct)
+        
+        # Dropout
+        self.dropout = nn.Dropout(dropout)
+    
+    def forward(self, x, mask=None):
+        # First sub-layer: Multi-head attention with skip connection
+        attn_output = self.self_attn(x, mask)
+        x = x + self.dropout(attn_output)  # Skip connection
+        x = self.norm1(x)  # Post-norm architecture
+        
+        # Second sub-layer: Feed-forward with skip connection
+        ff_output = self.feed_forward(x)
+        x = x + self.dropout(ff_output)  # Skip connection
+        x = self.norm2(x)  # Post-norm architecture
+        
+        return x
 
 # --------------- Transformer Core --------------- #
 class Transformer(nn.Module):
@@ -18,10 +122,18 @@ class Transformer(nn.Module):
         if self.use_pos_encoding:
             self.pos_embedding = nn.Parameter(torch.randn(1, MAX_TOKENS, embed_dim))  
 
+        # Custom encoder layers with skip connections
         self.encoder_layers = nn.ModuleList([
-            nn.TransformerEncoderLayer(d_model=embed_dim, nhead=num_heads, dim_feedforward=hidden_dim,activation=activation_fct, dropout=dropout)
+            TransformerEncoderLayerWithSkip(
+                embed_dim=embed_dim, 
+                num_heads=num_heads, 
+                hidden_dim=hidden_dim,
+                dropout=dropout,
+                activation_fct=activation_fct
+            )
             for _ in range(num_layers)
         ])
+        
         self.norm = nn.LayerNorm(embed_dim)
 
     def forward(self, x):
@@ -124,15 +236,15 @@ class GeneralTransformer(nn.Module):
                  mlp_head,       # MLP head module
                  dropout=0, 
                  use_pos_encoding=False, 
-                 tr_activation_fct='relu', 
-                 use_regression_token=True):
+                 tr_activation_fct='gelu', 
+                 use_regression_token=False):
         """
         Generic Transformer class allowing flexible embedding and head customization.
         """
         super().__init__()
         self.embed_dim = embed_dim
         self.embedding = embedding_cls(**embed_kwargs)  # Instantiate embedding
-
+        self.norm = nn.LayerNorm(embed_dim)
         self.use_regression_token = use_regression_token
         if use_regression_token:
             self.reg_token = nn.Parameter(torch.randn(1, 1, embed_dim))  # Learnable regression token
@@ -143,6 +255,8 @@ class GeneralTransformer(nn.Module):
 
     def forward(self, x):
         x = self.embedding(x)  # Shape: [batch_size, num_images, embed_dim]
+        
+        x = self.norm(x)
 
         if self.use_regression_token:
             batch_size = x.shape[0]
@@ -277,7 +391,7 @@ class MultiImageLightResNet(nn.Module):
 
 
 
-def get_transformer_models(patch_size, embed_dim, num_heads, hidden_dim, num_layers, dropout, use_pos_encoding = False, tr_activation_fct='gelu', use_regression_token=True ,name_suffix = ''):
+def get_transformer_models(patch_size, embed_dim, num_heads, hidden_dim, num_layers, dropout, use_pos_encoding = False, tr_activation_fct='gelu', use_regression_token=False ,name_suffix = ''):
     """
     Returns different variants of the GeneralTransformer model.
     """
@@ -351,10 +465,6 @@ def get_transformer_models(patch_size, embed_dim, num_heads, hidden_dim, num_lay
     }
     
     return models
-
-
-
-
 
 
 
