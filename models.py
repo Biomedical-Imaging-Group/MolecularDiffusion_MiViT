@@ -309,6 +309,9 @@ class GeneralTransformer(nn.Module):
             avg_tokens = x.mean(dim=1)  # [batch_size, embed_dim], average over the sequence
             return self.mlp_head(avg_tokens)  # Pass averaged output through MLP head
 
+
+# Resnet Model:
+
 class BasicBlock(nn.Module):
     expansion = 1
     def __init__(self, in_channels, out_channels, stride=1):
