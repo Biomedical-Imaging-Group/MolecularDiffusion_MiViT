@@ -315,6 +315,9 @@ class GeneralTransformer(nn.Module):
                 # Predict one value per input image in the sequence
                 return self.mlp_head(x)  # Shape: [batch_size, num_images, 1]
 
+
+# Resnet Model:
+
 class BasicBlock(nn.Module):
     expansion = 1
     def __init__(self, in_channels, out_channels, stride=1):
