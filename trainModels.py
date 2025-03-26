@@ -32,7 +32,7 @@ def load_validation_data():
     return torch.Tensor(vid1),torch.Tensor(vid3), torch.Tensor(vid5), torch.Tensor(vid7)
 
 
-single_prediction = True
+single_prediction = False
 use_regression_token = False
 
 # Get all transformer models, _s stands for small, _b for big models
@@ -72,10 +72,11 @@ verbose = False
 num_cycles = 50  # Number of dataset refreshes
 batch_size = 16
 
-
+mix_trajectories = True and not single_prediction
 
 # number of time steps per trajectory (frames), will be divided by nPosPerFrame
-T = 200
+nFrames = 30
+T = nFrames * nPosPerFrame
 # number of trajectories
 N = 64
 
@@ -111,12 +112,22 @@ for cycle in range(num_cycles):
                                     alphas=1)
         # Reshape trajectories
         trajs = trajs.transpose(1, 0, 2)
+        labels = labels.transpose(1, 0, 2)
 
+        # For reporting stats save generated labels 
+        all_gen_labels = np.append(all_gen_labels,labels[:, 0, 1])
+
+
+
+        if single_prediction:
+            labels = labels[:, 0, 1]
+        else:
+            labels = labels[:, :, 1]
+            labels = labels.reshape(labels.shape[0], -1, nPosPerFrame).mean(axis=2)
 
         # Store all labels
         all_labels.append(labels)
 
-        labels = torch.Tensor(labels).view(-1, 1)
 
         # Convert trajectories of D (pixels/s) to D (micro_m/ms)
         trajs = trajs / traj_div_factor
@@ -128,10 +139,38 @@ for cycle in range(num_cycles):
     # Concatenate all generated data
     all_videos = np.concatenate(all_videos, axis=0)
     all_labels = np.concatenate(all_labels, axis=0)
-    all_gen_labels = np.append(all_gen_labels,all_labels)
+
+
+    if mix_trajectories:
+        num_to_mix = int(0.3 * all_videos.shape[0])  # 30% of the data
+        indices = np.arange(all_videos.shape[0])
+        np.random.shuffle(indices)
+        mix_indices = indices[:num_to_mix]
+
+        for idx in mix_indices:
+            # Randomly select another trajectory to mix with
+            other_idx = np.random.choice(indices)
+            while other_idx == idx:
+                other_idx = np.random.choice(indices)
+
+            # Randomly select the split index
+            split_index = np.random.randint(nFrames//2 - 5, nFrames//2 + 5)
+
+            # Mix the videos and labels using a temporary buffer
+            temp_videos = all_videos[idx, split_index:].copy()
+            all_videos[idx, split_index:] = all_videos[other_idx, split_index:]
+            all_videos[other_idx, split_index:] = temp_videos
+
+            temp_labels = all_labels[idx, split_index:].copy()
+            all_labels[idx, split_index:] = all_labels[other_idx, split_index:]
+            all_labels[other_idx, split_index:] = temp_labels
+        
+
+
+
     # Convert to tensors
     all_videos = torch.Tensor(all_videos)
-    all_labels = torch.Tensor(all_labels).view(-1, 1)
+    all_labels = torch.Tensor(all_labels).unsqueeze(-1)  # Add an extra dimension for single_prediction
 
     # Create a dataset and shuffle
     dataset = ImageDataset(all_videos, all_labels)
@@ -145,10 +184,6 @@ for cycle in range(num_cycles):
         for batch_images, batch_labels in dataloader:
             optimizer.zero_grad()
             
-            # Adjust batch_labels shape based on single_prediction
-            if not model.single_prediction:
-                batch_size, num_images, _, _ = batch_images.shape
-                batch_labels = batch_labels.view(batch_size, 1).expand(-1, num_images).unsqueeze(-1)  # Shape: [batch_size, num_images, 1]
             
             predictions = model(batch_images)
 
