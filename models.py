@@ -273,7 +273,8 @@ class GeneralTransformer(nn.Module):
                  dropout=0, 
                  use_pos_encoding=False, 
                  tr_activation_fct='gelu', 
-                 use_regression_token=False):
+                 use_regression_token=False,
+                 single_prediction=True):
         """
         Generic Transformer class allowing flexible embedding and head customization.
         """
@@ -282,6 +283,7 @@ class GeneralTransformer(nn.Module):
         self.embedding = embedding_cls(**embed_kwargs)  # Instantiate embedding
         self.norm = nn.LayerNorm(embed_dim)
         self.use_regression_token = use_regression_token
+        self.single_prediction = single_prediction
         if use_regression_token:
             self.reg_token = nn.Parameter(torch.randn(1, 1, embed_dim))  # Learnable regression token
 
@@ -305,9 +307,13 @@ class GeneralTransformer(nn.Module):
             reg_out = x[:, 0, :]  # Extract regression token
             return self.mlp_head(reg_out)  # Output shape: [batch_size, 1]
         else:
-            # When no regression token is used, average the tokens across the sequence
-            avg_tokens = x.mean(dim=1)  # [batch_size, embed_dim], average over the sequence
-            return self.mlp_head(avg_tokens)  # Pass averaged output through MLP head
+            if self.single_prediction:
+                # When no regression token is used, average the tokens across the sequence
+                avg_tokens = x.mean(dim=1)  # [batch_size, embed_dim], average over the sequence
+                return self.mlp_head(avg_tokens)  # Pass averaged output through MLP head
+            else:
+                # Predict one value per input image in the sequence
+                return self.mlp_head(x)  # Shape: [batch_size, num_images, 1]
 
 class BasicBlock(nn.Module):
     expansion = 1
@@ -400,10 +406,11 @@ class LightResNet(nn.Module):
         return out
 
 class MultiImageLightResNet(nn.Module):
-    def __init__(self, image_size, num_classes=1):
+    def __init__(self, image_size, num_classes=1, single_prediction=True):
         super().__init__()
+        self.single_prediction = single_prediction
         # Create a lightweight ResNet backbone with fewer blocks
-        self.resnet = LightResNet(BasicBlock, [1, 1, 1],num_classes)  # Just 1 block per layer
+        self.resnet = LightResNet(BasicBlock, [1, 1, 1], num_classes)  # Just 1 block per layer
         
     def forward(self, x):
         # Input shape: [B, num_images, H, W]
@@ -417,17 +424,28 @@ class MultiImageLightResNet(nn.Module):
         x = self.resnet(x)  # [B*num_images, 1]
         
         # Reshape back to separate batch and num_images
-        x = x.view(batch_size, num_images)
+        x = x.view(batch_size, num_images, 1) # [B, num_images, 1]
         
-        # Average over num_images dimension
-        x = torch.mean(x, dim=1, keepdim=True)  # [B, 1]
+        if self.single_prediction:
+            # Average over num_images dimension
+            x = torch.mean(x, dim=1, keepdim=False)  # [B, 1]
         
         return x
 
 
 
+# Define model hyperparameters
+patch_size = 7
+embed_dim = 64
+num_heads = 4
+hidden_dim = 128
+num_layers = 6
+dropout = 0.0
 
-def get_transformer_models(patch_size, embed_dim, num_heads, hidden_dim, num_layers, dropout, use_pos_encoding = False, tr_activation_fct='gelu', use_regression_token=True ,name_suffix = ''):
+# Define model instances
+
+def get_transformer_models(patch_size = patch_size, embed_dim = embed_dim, num_heads = num_heads, hidden_dim = hidden_dim, num_layers = num_layers,
+                            dropout= dropout, use_pos_encoding = False, tr_activation_fct='gelu', use_regression_token=True , single_prediction = True, name_suffix = ''):
     """
     Returns different variants of the GeneralTransformer model.
     """
@@ -457,7 +475,8 @@ def get_transformer_models(patch_size, embed_dim, num_heads, hidden_dim, num_lay
             dropout=dropout,
             use_pos_encoding=use_pos_encoding,
             tr_activation_fct=tr_activation_fct,
-            use_regression_token=use_regression_token
+            use_regression_token=use_regression_token,
+            single_prediction=single_prediction
         ),
         "linear_1layer"+ name_suffix: GeneralTransformer(
             embedding_cls=LinearProjectionEmbedding,
@@ -470,7 +489,8 @@ def get_transformer_models(patch_size, embed_dim, num_heads, hidden_dim, num_lay
             dropout=dropout,
             use_pos_encoding=use_pos_encoding,
             tr_activation_fct=tr_activation_fct,
-            use_regression_token=use_regression_token
+            use_regression_token=use_regression_token,
+            single_prediction=single_prediction
         ),
         "cnn_1layer"+ name_suffix: GeneralTransformer(
             embedding_cls=CNNEmbedding,
@@ -483,7 +503,8 @@ def get_transformer_models(patch_size, embed_dim, num_heads, hidden_dim, num_lay
             dropout=dropout,
             use_pos_encoding=use_pos_encoding,
             tr_activation_fct=tr_activation_fct,
-            use_regression_token=use_regression_token
+            use_regression_token=use_regression_token,
+            single_prediction=single_prediction
         ),
         "deepcnn_1layer"+ name_suffix: GeneralTransformer(
             embedding_cls=DeepResNetEmbedding,
@@ -496,7 +517,8 @@ def get_transformer_models(patch_size, embed_dim, num_heads, hidden_dim, num_lay
             dropout=dropout,
             use_pos_encoding=use_pos_encoding,
             tr_activation_fct=tr_activation_fct,
-            use_regression_token=use_regression_token
+            use_regression_token=use_regression_token,
+            single_prediction=single_prediction
         ),
         "cnn_2layer"+ name_suffix: GeneralTransformer(
             embedding_cls=CNNEmbedding,
@@ -509,7 +531,8 @@ def get_transformer_models(patch_size, embed_dim, num_heads, hidden_dim, num_lay
             dropout=dropout,
             use_pos_encoding=use_pos_encoding,
             tr_activation_fct=tr_activation_fct,
-            use_regression_token=use_regression_token
+            use_regression_token=use_regression_token,
+            single_prediction=single_prediction
         ),
         "deepcnn_2layer"+ name_suffix: GeneralTransformer(
             embedding_cls=DeepResNetEmbedding,
@@ -522,7 +545,8 @@ def get_transformer_models(patch_size, embed_dim, num_heads, hidden_dim, num_lay
             dropout=dropout,
             use_pos_encoding=use_pos_encoding,
             tr_activation_fct=tr_activation_fct,
-            use_regression_token=use_regression_token
+            use_regression_token=use_regression_token,
+            single_prediction=single_prediction
         )
     }
     
@@ -545,6 +569,6 @@ class ImageDataset(Dataset):
 
     def __getitem__(self, idx):
         return self.images[idx], self.labels[idx]
-    
+
 
 

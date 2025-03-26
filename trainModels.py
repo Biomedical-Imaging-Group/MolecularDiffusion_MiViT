@@ -32,27 +32,16 @@ def load_validation_data():
     return torch.Tensor(vid1),torch.Tensor(vid3), torch.Tensor(vid5), torch.Tensor(vid7)
 
 
-# Define model hyperparameters
-patch_size = 7
-embed_dim = 64
-num_heads = 4
-hidden_dim = 128
-num_layers = 6
-dropout = 0.0
-
-
+single_prediction = True
+use_regression_token = False
 
 # Get all transformer models, _s stands for small, _b for big models
-models = get_transformer_models(patch_size, embed_dim, num_heads, hidden_dim, num_layers, dropout,name_suffix='_s')
-#models_big = get_transformer_models(patch_size, embed_dim*2, num_heads*2, hidden_dim*2, num_layers*2, dropout,name_suffix='_b')
-#models.update(models_big)
+models = get_transformer_models(patch_size, embed_dim, num_heads, hidden_dim, num_layers, dropout,name_suffix='_s', use_regression_token= use_regression_token, single_prediction=single_prediction)
 
-
-
-models_very_small = get_transformer_models(patch_size, embed_dim//2, num_heads//2, hidden_dim//2, num_layers//2, dropout,name_suffix='_vs')
+models_very_small = get_transformer_models(patch_size, embed_dim//2, num_heads//2, hidden_dim//2, num_layers//2, dropout,name_suffix='_vs', use_regression_token= use_regression_token, single_prediction=single_prediction)
 models.update(models_very_small)
 
-resnet = MultiImageLightResNet(patch_size)
+resnet = MultiImageLightResNet(patch_size, single_prediction=single_prediction)
 models.update({"resnet": resnet})
 
 # Create 1 optimizer and scheuler for each model
@@ -122,7 +111,7 @@ for cycle in range(num_cycles):
                                     alphas=1)
         # Reshape trajectories
         trajs = trajs.transpose(1, 0, 2)
-        labels = labels.transpose(1, 0, 2)[:, 0, 1]
+
 
         # Store all labels
         all_labels.append(labels)
@@ -149,14 +138,20 @@ for cycle in range(num_cycles):
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
 
     for name, model in models.items():
-
         model.train()
         optimizer = optimizers[name]
         scheduler = schedulers[name]
 
         for batch_images, batch_labels in dataloader:
             optimizer.zero_grad()
+            
+            # Adjust batch_labels shape based on single_prediction
+            if not model.single_prediction:
+                batch_size, num_images, _, _ = batch_images.shape
+                batch_labels = batch_labels.view(batch_size, 1).expand(-1, num_images).unsqueeze(-1)  # Shape: [batch_size, num_images, 1]
+            
             predictions = model(batch_images)
+
             loss = loss_function(predictions, batch_labels)
             loss.backward()
             optimizer.step()
@@ -175,32 +170,27 @@ for cycle in range(num_cycles):
         model.eval()
         with torch.no_grad():
             label_losses = []
-            for vid, label in zip(val_videos, val_labels):
+            for vid, label_value in zip(val_videos, val_labels):
+                # Adjust label shape based on single_prediction
+                if not model.single_prediction:
+                    batch_size, num_images, _, _ = vid.shape
+                    label = torch.full((batch_size, num_images, 1), label_value)  # Shape: [batch_size, num_images, 1]
+                else:
+                    label = torch.full((vid.shape[0],), label_value).view(-1, 1)  # Shape: [batch_size, 1]
+                
                 val_predictions = model(vid)
-                val_loss = loss_function(val_predictions, 
-                                        torch.full((vid.shape[0],), label).view(-1, 1))
+                val_loss = loss_function(val_predictions, label)
                 avg_val_loss = val_loss.item()
-                validation_losses[name][f"val_{label.item()}"].append(avg_val_loss)
+                validation_losses[name][f"val_{label_value.item()}"].append(avg_val_loss)
                 if(verbose):
-                    print(f"{name} on val_{label.item()}: Validation Loss = {avg_val_loss:.4f}")
+                    print(f"{name} on val_{label_value.item()}: Validation Loss = {avg_val_loss:.4f}")
                 label_losses.append(avg_val_loss)
             # Compute average across all labels
             avg_val_avg = np.mean(label_losses)  # Use numpy for mean calculation
             validation_losses[name]["val_avg"].append(avg_val_avg)
             if(verbose):
                 print(f"{name} on val_avg: Validation Loss = {avg_val_avg:.4f}")
-        # --- Validation Phase ---
-    for name, model in models.items():
 
-        model.eval()
-        with torch.no_grad():
-            for vid, label in zip(val_videos, val_labels):
-                val_predictions = model(vid)
-                val_loss = loss_function(val_predictions, torch.full((vid.shape[0],), label).view(-1,1))
-                avg_val_loss = val_loss.item()
-                validation_losses[name][f"val_{label.item()}"].append(avg_val_loss)
-                if(verbose):
-                    print(f"{name} on val_{label.item()}: Validation Loss = {avg_val_loss:.4f}")
 
 
 
