@@ -226,8 +226,10 @@ def trajectories_to_video(
     output_size = _image_dict["output_size"]
     upsampling_factor = _image_dict["upsampling_factor"]
     
-    # Psf is computed as 0.61 * wavelenght/NA according to:
-    fwhm_psf = 0.61 * _image_dict["wavelength"] / _image_dict["NA"]
+    # Psf is computed as 0.51 * wavelenght/NA according to:
+    # https://www.leica-microsystems.com/science-lab/life-science/microscope-resolution-concepts-factors-and-calculation/
+
+    fwhm_psf = 0.51 * _image_dict["wavelength"] / _image_dict["NA"]
     gaussian_sigma = upsampling_factor* fwhm_psf/2.355/resolution
     poisson_noise = _image_dict["poisson_noise"]
     trajectories = trajectories 
@@ -270,7 +272,7 @@ def trajectory_to_video(out_video,trajectory,nFrames, output_size, upsampling_fa
             # We can force the peak of the gaussian to have the right intensity
             spot_max = np.max(frame_spot)
             if(spot_max < 0.00001):
-                print("merde")
+                print("Particle Left the image")
             frame_hr += spot_intensity/spot_max * frame_spot
         
         frame_lr = block_reduce(frame_hr, block_size=upsampling_factor, func=np.mean)
