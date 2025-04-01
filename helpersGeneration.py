@@ -175,7 +175,7 @@ def trajectories_to_video(
             
             '`trajectory_unit`' : int
                 Unit of the trajectory, -1: pixels , which means the trajectory will not be divided by the resolution, or positive int value (standard value 100nm) which means the trajectory will be divided by resolution. 
-                The trajectory is supposed to be given in 100nm unit, meaning x=1 is a displacement of 100nm
+                The trajectory is supposed to be given in nm unit, meaning x=1 is a displacement of 1nm
                 For example if the unit is 100nm and the resolution is 200nm, the trajectory will be divided by 2, resulting in smaller displacement on screen. 
                 100 is the standard value standing for 100nm, to use pixels use -1.
 
@@ -230,17 +230,15 @@ def trajectories_to_video(
     output_size = _image_dict["output_size"]
     upsampling_factor = _image_dict["upsampling_factor"]
     
-    # Psf is computed as 0.51 * wavelenght/NA according to:
-    # https://www.leica-microsystems.com/science-lab/life-science/microscope-resolution-concepts-factors-and-calculation/
+    # Psf is computed as wavelenght/2NA according to:
+    #https://www.sciencedirect.com/science/article/pii/S0005272819301380?via%3Dihub
+    fwhm_psf = _image_dict["wavelength"] / 2 * _image_dict["NA"]
 
-    fwhm_psf = 0.51 * _image_dict["wavelength"] / _image_dict["NA"]
-    gaussian_sigma = upsampling_factor* fwhm_psf/2.355/resolution
+
+    gaussian_sigma = upsampling_factor/resolution * fwhm_psf/2.355
     poisson_noise = _image_dict["poisson_noise"]
-    trajectories = trajectories 
     
     out_videos = np.zeros((N,nFrames,output_size,output_size),np.float32)
-
-    # https://www.leica-microsystems.com/science-lab/life-science/microscope-resolution-concepts-factors-and-calculation/
     particle_mean, particle_std = _image_dict["particle_intensity"][0],_image_dict["particle_intensity"][1]
     background_mean, background_std = _image_dict["background_intensity"][0],_image_dict["background_intensity"][1]
 

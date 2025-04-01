@@ -2,6 +2,11 @@ import numpy as np
 from abc import ABC, abstractmethod
 import matplotlib.pyplot as plt
 import matplotlib.patches as pltpatches
+from fbm import fgn
+
+
+# ---------------------------------------------------------------------------------------------------------------------------------
+# Shapes part
 
 class Shape(ABC):
     """
@@ -363,6 +368,14 @@ class Rectangle(Shape):
         return max(abs(self.center_x) + diagonal, abs(self.center_y) + diagonal)
 
 
+
+
+
+# ---------------------------------------------------------------------------------------------------------------------------------
+# Plotting part
+
+
+
 def animate_trajectory_with_shapes(trajectory, shapes, nframes, points_per_frame=None, fps=5, save_path=None, max_dims = None, figsize=(8,8)):
     """
     Creates an animation of a particle's trajectory inside multiple shapes, showing one subtrajectory per frame.
@@ -438,7 +451,8 @@ def animate_trajectory_with_shapes(trajectory, shapes, nframes, points_per_frame
     
     plt.close()
     display(HTML(ani.to_jshtml()))
-    return 
+    return
+
 def animate_trajectory_with_shapes2(trajectory, shapes, nframes, points_per_frame=None, fps=5, save_path=None, max_dims=None, figsize=(8,8)):
     """
     Creates an animation of a particle's trajectory inside multiple shapes, showing only the current positions in each frame.
@@ -514,11 +528,8 @@ def animate_trajectory_with_shapes2(trajectory, shapes, nframes, points_per_fram
     return ani
 
 
-
-
-
-
-from stochastic.processes.noise import FractionalGaussianNoise as FGN
+# ---------------------------------------------------------------------------------------------------------------------------------
+# Generation part
 
 
 def disp_fbm(alpha : float,
@@ -555,10 +566,10 @@ def disp_fbm(alpha : float,
     '''
     
     # Generate displacements
-    disp = FGN(hurst = alpha/2).sample(n = T)
-    # Normalization factor
-    disp *= np.sqrt(T)**(alpha)
-    # Add D
+    disp = fgn(n=T, hurst=alpha/2, length=T, method="daviesharte")
+    # Scale by D / deltaT
+    # D is in px^2/s or nm^2/s, so multiply by deltaT and get a value in px^2 or nm^2, then take the square root to obtain a value in px or nm
+    # MSD (<r^2 (dT)> scales as 2 * dim * D * dT, since we are simulating the two dimensions independently we set dim = 1 and take the sqrt
     disp *= np.sqrt(2*D*deltaT)        
     
     return disp
@@ -637,5 +648,47 @@ def traj_in_rectangles(T, D, alpha, deltaT, rectangles, startPos=(0, 0)):
                 new_pos, _ = current_rect.reflect(new_pos, (0,0))
 
         positions[t] = new_pos
+    
+    return positions
+
+
+def traj_free(T, D, alpha, deltaT, startPos=(0, 0)):
+    """
+    Simulates the trajectory of a single particle undergoing fractional Brownian motion 
+    within a constrained rectangular region with an arbitrary angle.
+
+    Parameters
+    ----------
+    T : int
+        Number of time steps for the simulation.
+    D : float
+        Diffusion coefficient controlling the magnitude of displacements.
+    alpha : float in [0,2]
+        Anomalous exponent defining the nature of the motion 
+        (alpha = 1 corresponds to standard Brownian motion).
+    deltaT : int
+        Sampling time interval between steps.
+    rect : list of Rectangles
+
+    startPos : tuple of (float, float), optional
+        Initial position of the particle within the rectangle. Defaults to (0,0).
+
+    Returns
+    -------
+    numpy.ndarray
+        Array of shape (T, 2) containing the (x, y) positions of the particle at each step.
+    """
+
+
+    # Generate displacements
+    disp_x = disp_fbm(alpha, D, T, deltaT)
+    disp_y = disp_fbm(alpha, D, T, deltaT)
+
+
+    
+    # Initialize position array in rotated frame
+    positions = np.zeros((T, 2))
+    positions[:,0] = np.cumsum(disp_x)
+    positions[:,1] = np.cumsum(disp_y)
     
     return positions
