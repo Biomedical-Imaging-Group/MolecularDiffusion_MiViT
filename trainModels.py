@@ -34,14 +34,51 @@ def load_validation_data():
 
 single_prediction = False
 use_regression_token = False
-
+use_pos_encoding = True
+tr_activation_fct = 'gelu'
 # Get all transformer models, _s stands for small, _b for big models
-models = get_transformer_models(patch_size, embed_dim, num_heads, hidden_dim, num_layers, dropout,name_suffix='_s', use_regression_token= use_regression_token, single_prediction=single_prediction)
+models = get_transformer_models(patch_size, embed_dim, num_heads, hidden_dim, num_layers, dropout, use_pos_encoding=use_pos_encoding,tr_activation_fct=tr_activation_fct,name_suffix='_s', use_regression_token= use_regression_token, single_prediction=single_prediction)
 
-models_very_small = get_transformer_models(patch_size, embed_dim//2, num_heads//2, hidden_dim//2, num_layers//2, dropout,name_suffix='_vs', use_regression_token= use_regression_token, single_prediction=single_prediction)
+models_very_small = get_transformer_models(patch_size, embed_dim//2, num_heads//2, hidden_dim//2, num_layers//2, dropout, use_pos_encoding=use_pos_encoding,tr_activation_fct=tr_activation_fct,name_suffix='_vs', use_regression_token= use_regression_token, single_prediction=single_prediction)
 models.update(models_very_small)
+"""
+cnn_big =  GeneralTransformer(
+    embedding_cls=CNNEmbedding,
+    embed_kwargs=embed_kwargs,
+    embed_dim=embed_dim,
+    num_heads=num_heads,
+    hidden_dim=hidden_dim,
+    num_layers=num_layers,
+    mlp_head=twoLayerMLP,
+    dropout=dropout,
+    use_pos_encoding=use_pos_encoding,
+    tr_activation_fct=tr_activation_fct,
+    use_regression_token=use_regression_token,
+    single_prediction=single_prediction
+)
 
+deep_cnn_big = GeneralTransformer(
+            embedding_cls=DeepResNetEmbedding,
+            embed_kwargs=embed_kwargs,
+            embed_dim=embed_dim,
+            num_heads=num_heads,
+            hidden_dim=hidden_dim,
+            num_layers=num_layers,
+            mlp_head=twoLayerMLP,
+            dropout=dropout,
+            use_pos_encoding=use_pos_encoding,
+            tr_activation_fct=tr_activation_fct,
+            use_regression_token=use_regression_token,
+            single_prediction=single_prediction
+        )
+models.update({"cnn_b": cnn_big})
+models.update({"deep_cnn_b": deep_cnn_big})
+
+"""
 resnet = MultiImageLightResNet(patch_size, single_prediction=single_prediction)
+
+
+
 models.update({"resnet": resnet})
 
 # Create 1 optimizer and scheuler for each model
@@ -54,22 +91,22 @@ loss_function = nn.MSELoss()
 
 # Image generation parameters
 nPosPerFrame = 10 
-background_mean, background_sigma = 100,10
+background_mean, background_sigma = 200,10
 part_mean, part_sigma = 500,20
-image_props={"upsampling_factor":10,
+image_props={"upsampling_factor":5,
       "background_intensity": [background_mean,background_sigma],
       "particle_intensity": [part_mean,part_sigma],
-      "resolution": 100e-9,
+      "resolution": 130e-9,
       "trajectory_unit" : 1000,
       "output_size": 7,
-      "poisson_noise" : -1}
+      "poisson_noise" : 1}
 
 
 
 
 verbose = False
 
-num_cycles = 50  # Number of dataset refreshes
+num_cycles = 100  # Number of dataset refreshes
 batch_size = 16
 
 mix_trajectories = True and not single_prediction
@@ -80,6 +117,7 @@ T = nFrames * nPosPerFrame
 # number of trajectories
 N = 64
 
+# Mean and variance of the trajectories of Ds
 TrainingDs_list = [[1, 1], [3, 1], [5, 1], [7, 1]]
 
 
@@ -142,6 +180,46 @@ for cycle in range(num_cycles):
 
 
     if mix_trajectories:
+        num_sequences_per_label = all_videos.shape[0] // len(val_labels)  # Number of sequences per label
+        quarter_sequences = num_sequences_per_label // 4  # N/4 sequences per label
+
+        # Define the mixing pairs (modularly specify which labels to mix)
+        start_index = 0
+
+        mixing_pairs = [
+            (1, 7, start_index),  # Mix label 1 with label 7
+            (1, 5, start_index + quarter_sequences),  # Mix label 1 with label 5
+            (3, 7, start_index + quarter_sequences),  # Mix label 3 with label 7
+            (3, 5, start_index)   # Mix label 3 with label 5
+        ]
+
+        for label_a, label_b, start_idx in mixing_pairs:
+
+            label_a_start_idx = torch.where(val_labels == label_a)[0].item() + start_idx
+            label_b_start_idx = torch.where(val_labels == label_b)[0].item()* N + start_idx
+
+            for i in range(quarter_sequences):
+                # Randomly select the split index
+                split_index = np.random.randint(nFrames // 2 - 5, nFrames // 2 + 5)
+                idx_a = label_a_start_idx + i
+                idx_b = label_b_start_idx + i
+
+                # Mix the videos and labels using a temporary buffer
+                temp_videos = all_videos[idx_a, split_index:].copy()
+                all_videos[idx_a, split_index:] = all_videos[idx_b, split_index:]
+                all_videos[idx_b, split_index:] = temp_videos
+
+                temp_labels = all_labels[idx_a, split_index:].copy()
+                all_labels[idx_a, split_index:] = all_labels[idx_b, split_index:]
+                all_labels[idx_b, split_index:] = temp_labels
+
+                if(verbose):
+                    print(f"Mixing {idx_a} (label {label_a}) with {idx_b} (label {label_b}) at split index {split_index}")
+
+    """
+    MIXES TRAJECTORIES TOO MUCH
+
+    if mix_trajectories:
         num_to_mix = int(0.3 * all_videos.shape[0])  # 30% of the data
         indices = np.arange(all_videos.shape[0])
         np.random.shuffle(indices)
@@ -164,8 +242,9 @@ for cycle in range(num_cycles):
             temp_labels = all_labels[idx, split_index:].copy()
             all_labels[idx, split_index:] = all_labels[other_idx, split_index:]
             all_labels[other_idx, split_index:] = temp_labels
-        
-
+            print(f"Mixing {idx} with {other_idx} at split index {split_index}")
+            print(f"Labels: {all_labels[idx,:]} <-> {all_labels[other_idx,:]}")
+    """
 
 
     # Convert to tensors
@@ -183,7 +262,6 @@ for cycle in range(num_cycles):
 
         for batch_images, batch_labels in dataloader:
             optimizer.zero_grad()
-            
             
             predictions = model(batch_images)
 

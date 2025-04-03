@@ -444,6 +444,7 @@ num_heads = 4
 hidden_dim = 128
 num_layers = 6
 dropout = 0.0
+# Define MLP heads
 
 # Define model instances
 
@@ -453,8 +454,6 @@ def get_transformer_models(patch_size = patch_size, embed_dim = embed_dim, num_h
     Returns different variants of the GeneralTransformer model.
     """
     embed_kwargs = {"patch_size": patch_size, "embed_dim": embed_dim}
-    
-    # Define MLP heads
     twoLayerMLP = nn.Sequential(
         nn.Linear(embed_dim, hidden_dim),
         nn.ReLU(),
@@ -464,7 +463,6 @@ def get_transformer_models(patch_size = patch_size, embed_dim = embed_dim, num_h
     oneLayerMLP = nn.Sequential(
         nn.Linear(embed_dim, 1)  # Output a single scalar value
     )
-
     # Define model instances
     models = {
         "linear_2layer" + name_suffix: GeneralTransformer(
