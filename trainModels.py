@@ -17,6 +17,7 @@ models, optimizers, schedulers = getTrainingModels()
 
 ### Training Settings ###
 num_cycles = 100  # Number of dataset refreshes
+# ToDo: Try if reducing batch_size makes the model learn the transitions
 batch_size = 16 # Number of sequences in 1 batch
 N = 64 # Number of sequences in per value of D in Trainings_Ds
 # Mean and variance of the trajectories of Ds
@@ -149,8 +150,8 @@ for cycle in range(num_cycles):
 
         for label_a, label_b, start_idx in mixing_pairs:
 
-            label_a_start_idx = torch.where(val_labels == label_a)[0].item() + start_idx
-            label_b_start_idx = torch.where(val_labels == label_b)[0].item()* N + start_idx
+            label_a_start_idx = torch.where(val_labels == label_a)[0].item() *N + start_idx
+            label_b_start_idx = torch.where(val_labels == label_b)[0].item() *N + start_idx
 
             for i in range(quarter_sequences):
                 # Randomly select the split index
@@ -177,7 +178,7 @@ for cycle in range(num_cycles):
 
     # Create a dataset and shuffle
     dataset = ImageDataset(all_videos, all_labels)
-    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
 
 
     # Training Loop
