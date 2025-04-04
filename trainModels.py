@@ -21,6 +21,8 @@ batch_size = 16 # Number of sequences in 1 batch
 N = 64 # Number of sequences in per value of D in Trainings_Ds
 # Mean and variance of the trajectories of Ds
 TrainingDs_list = [[1, 1], [3, 1], [5, 1], [7, 1]]
+
+printParams = True
 verbose = False
 
 
@@ -38,10 +40,49 @@ for models_name in validation_losses.keys():
 all_gen_labels = np.array([])  # Empty array to start
 
 
-print("Starting Training with parameters:")
-print("### Model parameters ###")
 
-print(datetime.datetime.now())
+if(printParams):
+    print("Starting Training with parameters:")
+    # Training Settings
+    print("### Training Settings ###")
+    print(f"Num Cycles: {num_cycles}")
+    print(f"Batch Size: {batch_size}")
+    print(f"Sequences per D: {N}")
+    print(f"Training D List: {TrainingDs_list}")
+    print(f"Verbose: {verbose}")
+    print(f"Mix Trajectories: {mix_trajectories}")
+    print()
+
+    # Model Settings
+    print("### Model Hyperparameters ###")
+    print(f"Loss Function: {loss_function}")
+    print(f"Single Prediction: {single_prediction}")
+    print(f"Use Regression Token: {use_regression_token}")
+    print(f"Use Positional Encoding: {use_pos_encoding}")
+    print(f"Transformer Activation Function: {tr_activation_fct}")
+    print()
+
+    # Model Architecture
+    print("### Model Architecture ###")
+    print(f"Patch Size: {patch_size}")
+    print(f"Embedding Dimension: {embed_dim}")
+    print(f"Num Heads: {num_heads}")
+    print(f"Hidden Dimension: {hidden_dim}")
+    print(f"Num Layers: {num_layers}")
+    print(f"Dropout: {dropout}")
+    print()
+
+
+    print("### Image Generation Parameters ###")
+    print(f"Trajectory Division Factor: {traj_div_factor}")
+    print(f"Positions Per Frame: {nPosPerFrame}")
+    print(f"Number of Frames: {nFrames}")
+    print(f"Total Time Steps: {T}")
+    print(f"Image Properties: {image_props}")
+    print()
+
+
+    print("StartTime: ",datetime.datetime.now())
 
 
 for cycle in range(num_cycles):

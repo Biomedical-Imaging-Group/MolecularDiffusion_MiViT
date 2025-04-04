@@ -427,7 +427,7 @@ import numpy as np
 import matplotlib as plt
 import matplotlib.animation as animation
 import matplotlib.pyplot as plt
-from IPython.display import HTML
+from IPython.display import HTML, display
 import numpy as np
 
 
