@@ -245,7 +245,7 @@ class DeepResNetEmbedding(nn.Module):
 
     def forward(self, x):
         batch_size, num_images, h, w = x.shape
-        x = x.view(batch_size * num_images, 1, h, w)  # Flatten num_images into batch
+        x = x.reshape(batch_size * num_images, 1, h, w)  # Flatten num_images into batch
 
         x = self.initial_conv(x)
         x = self.bn1(x)
@@ -421,7 +421,7 @@ class MultiImageLightResNet(nn.Module):
         
         # Reshape to process each image independently
         # Add channel dimension for grayscale images
-        x = x.view(batch_size * num_images, 1, height, width)  # [B*num_images, 1, H, W]
+        x = x.reshape(batch_size * num_images, 1, height, width)  # [B*num_images, 1, H, W]
         
         # Process through ResNet
         x = self.resnet(x)  # [B*num_images, 1]

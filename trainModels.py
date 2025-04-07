@@ -161,11 +161,11 @@ for cycle in range(num_cycles):
 
                 # Mix the videos and labels using a temporary buffer
                 temp_videos = all_videos[idx_a, split_index:].copy()
-                all_videos[idx_a, split_index:] = all_videos[idx_b, split_index:]
+                all_videos[idx_a, split_index:] = all_videos[idx_b, split_index:].copy()
                 all_videos[idx_b, split_index:] = temp_videos
 
                 temp_labels = all_labels[idx_a, split_index:].copy()
-                all_labels[idx_a, split_index:] = all_labels[idx_b, split_index:]
+                all_labels[idx_a, split_index:] = all_labels[idx_b, split_index:].copy()
                 all_labels[idx_b, split_index:] = temp_labels
 
                 if(verbose):
