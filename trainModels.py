@@ -6,6 +6,10 @@ from trainSettings import *
 import datetime
 
 
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+print("Using device:", device)
+
+
 
 
 ### Models Settings ###
@@ -14,10 +18,13 @@ import datetime
 mix_trajectories = True and not single_prediction
 models, optimizers, schedulers = getTrainingModels()
 
+for name in models:
+    models[name] = models[name].to(device)
 
 ### Training Settings ###
 num_cycles = 100  # Number of dataset refreshes
 # ToDo: Try if reducing batch_size makes the model learn the transitions
+# ToDO: Try computing loss per timeStep, or add a loss term that favorises transitions see https://chatgpt.com/c/67efd8f6-52a4-8010-a0ca-09ea0b60fa3e
 batch_size = 16 # Number of sequences in 1 batch
 N = 64 # Number of sequences in per value of D in Trainings_Ds
 # Mean and variance of the trajectories of Ds
@@ -25,6 +32,8 @@ TrainingDs_list = [[1, 1], [3, 1], [5, 1], [7, 1]]
 
 printParams = True
 verbose = False
+
+
 
 
 
@@ -188,6 +197,10 @@ for cycle in range(num_cycles):
         scheduler = schedulers[name]
 
         for batch_images, batch_labels in dataloader:
+
+            batch_images = batch_images.to(device)
+            batch_labels = batch_labels.to(device)
+
             optimizer.zero_grad()
             
             predictions = model(batch_images)
@@ -212,12 +225,15 @@ for cycle in range(num_cycles):
         with torch.no_grad():
             label_losses = []
             for vid, label_value in zip(val_videos, val_labels):
+                vid = vid.to(device)
+
+
                 # Adjust label shape based on single_prediction
                 if not model.single_prediction:
                     batch_size, num_images, _, _ = vid.shape
-                    label = torch.full((batch_size, num_images, 1), label_value)  # Shape: [batch_size, num_images, 1]
+                    label = torch.full((batch_size, num_images, 1), label_value, device=device)  # Shape: [batch_size, num_images, 1]
                 else:
-                    label = torch.full((vid.shape[0],), label_value).view(-1, 1)  # Shape: [batch_size, 1]
+                    label = torch.full((vid.shape[0],), label_value, device=device).view(-1, 1)  # Shape: [batch_size, 1]
                 
                 val_predictions = model(vid)
                 val_loss = loss_function(val_predictions, label)
