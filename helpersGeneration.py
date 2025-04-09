@@ -209,6 +209,7 @@ def trajectories_to_video(
         ],  # Mean and standard deviation of the particle intensity
         "NA": 1.46,  # Numerical aperture
         "wavelength": 500e-9,  # Wavelength
+        "psf_division_factor": 1,  # Wavelength
         "resolution": 100e-9,  # Camera resolution or effective resolution, aka pixelsize
         "output_size": 32,
         "upsampling_factor": 5,
@@ -230,10 +231,11 @@ def trajectories_to_video(
 
     output_size = _image_dict["output_size"]
     upsampling_factor = _image_dict["upsampling_factor"]
+    psf_div_factor = _image_dict["psf_division_factor"]
     
     # Psf is computed as wavelenght/2NA according to:
     #https://www.sciencedirect.com/science/article/pii/S0005272819301380?via%3Dihub
-    fwhm_psf = _image_dict["wavelength"] / 2 * _image_dict["NA"]
+    fwhm_psf = _image_dict["wavelength"] / 2 * _image_dict["NA"] / psf_div_factor
 
 
     gaussian_sigma = upsampling_factor/resolution * fwhm_psf/2.355

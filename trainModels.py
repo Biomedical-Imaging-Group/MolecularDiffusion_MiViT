@@ -25,7 +25,7 @@ for name in models:
 num_cycles = 100  # Number of dataset refreshes
 # ToDo: Try if reducing batch_size makes the model learn the transitions
 # ToDO: Try computing loss per timeStep, or add a loss term that favorises transitions see https://chatgpt.com/c/67efd8f6-52a4-8010-a0ca-09ea0b60fa3e
-batch_size = 16 # Number of sequences in 1 batch
+batch_size = 1 # Number of sequences in 1 batch
 N = 64 # Number of sequences in per value of D in Trainings_Ds
 # Mean and variance of the trajectories of Ds
 TrainingDs_list = [[1, 1], [3, 1], [5, 1], [7, 1]]
@@ -187,7 +187,7 @@ for cycle in range(num_cycles):
 
     # Create a dataset and shuffle
     dataset = ImageDataset(all_videos, all_labels)
-    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
+    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
 
 
     # Training Loop

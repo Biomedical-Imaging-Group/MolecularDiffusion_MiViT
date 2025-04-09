@@ -27,12 +27,13 @@ nPosPerFrame = 10
 nFrames = 30 # = Seuence length
 T = nFrames * nPosPerFrame
 # number of trajectories
-background_mean, background_sigma = 200,10
+background_mean, background_sigma = 0,00
 part_mean, part_sigma = 500,20
 image_props={"upsampling_factor":5,
       "background_intensity": [background_mean,background_sigma],
       "particle_intensity": [part_mean,part_sigma],
-      "resolution": 130e-9,
+      "resolution": 100e-9,
+      "psf_division_factor": 2,
       "trajectory_unit" : 1000,
       "output_size": 7,
       "poisson_noise" : 1}
