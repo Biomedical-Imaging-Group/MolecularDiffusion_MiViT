@@ -9,7 +9,8 @@ loss_function = nn.MSELoss()
 single_prediction = False
 use_regression_token = False
 use_pos_encoding = True
-tr_activation_fct = 'gelu'
+tr_activation_fct = F.elu
+# tr_activation_fct = F.LeakyReLU, F.GELU F.ReLU
 
 # Define model hyperparameters
 patch_size = 7
@@ -82,7 +83,7 @@ def getTrainingModels():
     models.update({"deep_cnn_b": deep_cnn_big})
 
     """
-    resnet = MultiImageLightResNet(patch_size, single_prediction=single_prediction)
+    resnet = MultiImageLightResNet(patch_size, single_prediction=single_prediction, activation=nn.SiLU)
     models.update({"resnet": resnet})
 
     # Create 1 optimizer and scheuler for each model
@@ -157,9 +158,9 @@ def get_transformer_models(patch_size = patch_size, embed_dim = embed_dim, num_h
             hidden_dim=hidden_dim,
             num_layers=num_layers,
             mlp_head=twoLayerMLP,
+            tr_activation_fct=tr_activation_fct,
             dropout=dropout,
             use_pos_encoding=use_pos_encoding,
-            tr_activation_fct=tr_activation_fct,
             use_regression_token=use_regression_token,
             single_prediction=single_prediction
         ),
@@ -171,9 +172,9 @@ def get_transformer_models(patch_size = patch_size, embed_dim = embed_dim, num_h
             hidden_dim=hidden_dim,
             num_layers=num_layers,
             mlp_head=oneLayerMLP,
+            tr_activation_fct=tr_activation_fct,
             dropout=dropout,
             use_pos_encoding=use_pos_encoding,
-            tr_activation_fct=tr_activation_fct,
             use_regression_token=use_regression_token,
             single_prediction=single_prediction
         ),
@@ -185,9 +186,9 @@ def get_transformer_models(patch_size = patch_size, embed_dim = embed_dim, num_h
             hidden_dim=hidden_dim,
             num_layers=num_layers,
             mlp_head=oneLayerMLP,
+            tr_activation_fct=tr_activation_fct,
             dropout=dropout,
             use_pos_encoding=use_pos_encoding,
-            tr_activation_fct=tr_activation_fct,
             use_regression_token=use_regression_token,
             single_prediction=single_prediction
         ),
@@ -199,9 +200,9 @@ def get_transformer_models(patch_size = patch_size, embed_dim = embed_dim, num_h
             hidden_dim=hidden_dim,
             num_layers=num_layers,
             mlp_head=oneLayerMLP,
+            tr_activation_fct=tr_activation_fct,
             dropout=dropout,
             use_pos_encoding=use_pos_encoding,
-            tr_activation_fct=tr_activation_fct,
             use_regression_token=use_regression_token,
             single_prediction=single_prediction
         ),
@@ -213,9 +214,9 @@ def get_transformer_models(patch_size = patch_size, embed_dim = embed_dim, num_h
             hidden_dim=hidden_dim,
             num_layers=num_layers,
             mlp_head=twoLayerMLP,
+            tr_activation_fct=tr_activation_fct,
             dropout=dropout,
             use_pos_encoding=use_pos_encoding,
-            tr_activation_fct=tr_activation_fct,
             use_regression_token=use_regression_token,
             single_prediction=single_prediction
         ),
@@ -227,9 +228,9 @@ def get_transformer_models(patch_size = patch_size, embed_dim = embed_dim, num_h
             hidden_dim=hidden_dim,
             num_layers=num_layers,
             mlp_head=twoLayerMLP,
+            tr_activation_fct=tr_activation_fct,
             dropout=dropout,
             use_pos_encoding=use_pos_encoding,
-            tr_activation_fct=tr_activation_fct,
             use_regression_token=use_regression_token,
             single_prediction=single_prediction
         )

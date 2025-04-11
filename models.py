@@ -58,20 +58,16 @@ class MultiHeadAttention(nn.Module):
         
         return output
 
-# --------------- Feed Forward Network --------------- #
 class FeedForward(nn.Module):
-    def __init__(self, embed_dim, hidden_dim, dropout=0.0, activation_fct='gelu'):
+    def __init__(self, embed_dim, hidden_dim, activation_fct, dropout=0.0, ):
         super().__init__()
         self.fc1 = nn.Linear(embed_dim, hidden_dim)
         self.fc2 = nn.Linear(hidden_dim, embed_dim)
         self.dropout = nn.Dropout(dropout)
-        
-        if activation_fct == 'gelu':
-            self.activation = F.gelu
-        elif activation_fct == 'relu':
-            self.activation = F.relu
-        else:
-            raise ValueError(f"Unsupported activation function: {activation_fct}")
+
+        if not callable(activation_fct):
+            raise ValueError("activation_fct must be a callable function from torch.nn.functional or a custom function.")
+        self.activation = activation_fct
     
     def forward(self, x):
         x = self.fc1(x)
@@ -80,9 +76,10 @@ class FeedForward(nn.Module):
         x = self.fc2(x)
         return x
 
+
 # --------------- Transformer Encoder Layer with Skip Connections --------------- #
 class TransformerEncoderLayerWithSkip(nn.Module):
-    def __init__(self, embed_dim, num_heads, hidden_dim, dropout=0.0, activation_fct='gelu'):
+    def __init__(self, embed_dim, num_heads, hidden_dim, activation_fct, dropout=0.0, ):
         super().__init__()
         # Multi-head attention
         self.self_attn = MultiHeadAttention(embed_dim, num_heads, dropout)
@@ -92,7 +89,7 @@ class TransformerEncoderLayerWithSkip(nn.Module):
         self.norm2 = nn.LayerNorm(embed_dim)
         
         # Feed-forward network
-        self.feed_forward = FeedForward(embed_dim, hidden_dim, dropout, activation_fct)
+        self.feed_forward = FeedForward(embed_dim, hidden_dim, activation_fct, dropout)
         
         # Dropout
         self.dropout = nn.Dropout(dropout)
@@ -128,8 +125,8 @@ class Transformer(nn.Module):
                 embed_dim=embed_dim, 
                 num_heads=num_heads, 
                 hidden_dim=hidden_dim,
+                activation_fct=activation_fct,
                 dropout=dropout,
-                activation_fct=activation_fct
             )
             for _ in range(num_layers)
         ])
@@ -270,9 +267,9 @@ class GeneralTransformer(nn.Module):
                  hidden_dim, 
                  num_layers, 
                  mlp_head,       # MLP head module
+                 tr_activation_fct,
                  dropout=0, 
-                 use_pos_encoding=False, 
-                 tr_activation_fct='gelu', 
+                 use_pos_encoding=False,
                  use_regression_token=False,
                  single_prediction=True):
         """
@@ -320,15 +317,19 @@ class GeneralTransformer(nn.Module):
 
 class BasicBlock(nn.Module):
     expansion = 1
-    def __init__(self, in_channels, out_channels, stride=1):
+
+    def __init__(self, in_channels, out_channels, stride=1, activation=nn.ReLU):
         super().__init__()
+        self.activation = activation(inplace=True)
+
         self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=stride, padding=1, bias=False)
         self.bn1 = nn.BatchNorm2d(out_channels)
-        self.relu1 = nn.ReLU(inplace=True)
+        self.act1 = activation(inplace=True)
+
         self.conv2 = nn.Conv2d(out_channels, out_channels, kernel_size=3, stride=1, padding=1, bias=False)
         self.bn2 = nn.BatchNorm2d(out_channels)
-        self.relu2 = nn.ReLU(inplace=True)
-        
+        self.act2 = activation(inplace=True)
+
         self.shortcut = nn.Sequential()
         if stride != 1 or in_channels != out_channels:
             self.shortcut = nn.Sequential(
@@ -338,101 +339,83 @@ class BasicBlock(nn.Module):
 
     def forward(self, x):
         identity = x
-        
+
         out = self.conv1(x)
         out = self.bn1(out)
-        out = self.relu1(out)
-        
+        out = self.act1(out)
+
         out = self.conv2(out)
         out = self.bn2(out)
-        
+
         out += self.shortcut(identity)
-        out = self.relu2(out)
-        
+        out = self.act2(out)
+
         return out
 
+
 class LightResNet(nn.Module):
-    def __init__(self, block, num_blocks, num_classes=1, feature_size=64):
+    def __init__(self, block, num_blocks, num_classes=1, feature_size=64, activation=nn.ReLU):
         super().__init__()
-        self.in_channels = 32  # Reduced from 64
-        
-        # Always use 1 input channel for grayscale
-        self.conv1 = nn.Conv2d(1, 32, kernel_size=5, stride=2, padding=2, bias=False)  # Smaller kernel
+        self.in_channels = 32
+        self.activation = activation
+
+        self.conv1 = nn.Conv2d(1, 32, kernel_size=5, stride=2, padding=2, bias=False)
         self.bn1 = nn.BatchNorm2d(32)
-        self.relu = nn.ReLU(inplace=True)
+        self.act = activation(inplace=True)
         self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
-        
-        self.layer1 = self._make_layer(block, 32, num_blocks[0], stride=1)  # 32 channels
-        self.layer2 = self._make_layer(block, 64, num_blocks[1], stride=2)   # 64 channels
-        self.layer3 = self._make_layer(block, 128, num_blocks[2], stride=2)  # Max of 128 channels
-        
+
+        self.layer1 = self._make_layer(block, 32, num_blocks[0], stride=1)
+        self.layer2 = self._make_layer(block, 64, num_blocks[1], stride=2)
+        self.layer3 = self._make_layer(block, 128, num_blocks[2], stride=2)
+
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
-        
-        # Define the fully connected layers
         self.feature_size = feature_size
         self.fc1 = nn.Linear(128 * block.expansion, self.feature_size)
-        self.fc_relu = nn.ReLU(inplace=True)
+        self.fc_act = activation(inplace=True)
         self.fc2 = nn.Linear(self.feature_size, num_classes)
 
     def _make_layer(self, block, out_channels, num_blocks, stride):
         strides = [stride] + [1] * (num_blocks - 1)
         layers = []
         for stride in strides:
-            layers.append(block(self.in_channels, out_channels, stride))
+            layers.append(block(self.in_channels, out_channels, stride, activation=self.activation))
             self.in_channels = out_channels * block.expansion
         return nn.Sequential(*layers)
 
     def forward(self, x):
-        # Print input shape for debugging
-        # print(f"Input shape: {x.shape}")
-        
         out = self.conv1(x)
         out = self.bn1(out)
-        out = self.relu(out)
+        out = self.act(out)
         out = self.maxpool(out)
-        
+
         out = self.layer1(out)
         out = self.layer2(out)
         out = self.layer3(out)
-        
+
         out = self.avgpool(out)
-        # print(f"Shape after avgpool: {out.shape}")
-        
         out = torch.flatten(out, 1)
-        # print(f"Shape after flatten: {out.shape}")
-        
-        # Two-layer output with ReLU
         out = self.fc1(out)
-        out = self.fc_relu(out)
+        out = self.fc_act(out)
         out = self.fc2(out)
-        
+
         return out
 
+
 class MultiImageLightResNet(nn.Module):
-    def __init__(self, image_size, num_classes=1, single_prediction=True):
+    def __init__(self, image_size, num_classes=1, single_prediction=True, activation=nn.ReLU):
         super().__init__()
         self.single_prediction = single_prediction
-        # Create a lightweight ResNet backbone with fewer blocks
-        self.resnet = LightResNet(BasicBlock, [1, 1, 1], num_classes)  # Just 1 block per layer
-        
+        self.resnet = LightResNet(BasicBlock, [1, 1, 1], num_classes, activation=activation)
+
     def forward(self, x):
-        # Input shape: [B, num_images, H, W]
         batch_size, num_images, height, width = x.shape
-        
-        # Reshape to process each image independently
-        # Add channel dimension for grayscale images
-        x = x.reshape(batch_size * num_images, 1, height, width)  # [B*num_images, 1, H, W]
-        
-        # Process through ResNet
-        x = self.resnet(x)  # [B*num_images, 1]
-        
-        # Reshape back to separate batch and num_images
-        x = x.view(batch_size, num_images, 1) # [B, num_images, 1]
-        
+        x = x.reshape(batch_size * num_images, 1, height, width)
+        x = self.resnet(x)
+        x = x.view(batch_size, num_images, 1)
+
         if self.single_prediction:
-            # Average over num_images dimension
-            x = torch.mean(x, dim=1, keepdim=False)  # [B, 1]
-        
+            x = torch.mean(x, dim=1, keepdim=False)
+
         return x
 
 
