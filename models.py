@@ -185,7 +185,7 @@ class CNNEmbedding(nn.Module):
         assert h == w == self.patch_size, "Patch size mismatch"
 
         # Reshape to apply Conv2d independently per image:
-        x = x.view(batch_size * num_images, 1, h, w)  # Shape: (B * num_images, 1, patch_size, patch_size)
+        x = x.reshape(batch_size * num_images, 1, h, w)  # Shape: (B * num_images, 1, patch_size, patch_size)
         
         # Apply convolution (removing spatial dimensions)
         x = self.conv(x)  # Shape: (B * num_images, embed_dim, 1, 1)

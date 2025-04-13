@@ -22,12 +22,14 @@ for name in models:
     models[name] = models[name].to(device)
 
 ### Training Settings ###
-num_cycles = 100  # Number of dataset refreshes
+num_cycles = 20  # Number of dataset refreshes
 # ToDo: Try if reducing batch_size makes the model learn the transitions
 # ToDO: Try computing loss per timeStep, or add a loss term that favorises transitions see https://chatgpt.com/c/67efd8f6-52a4-8010-a0ca-09ea0b60fa3e
-batch_size = 1 # Number of sequences in 1 batch
+batch_size = 8 # Number of sequences in 1 batch
+shuffle = True # if trajectories should be shuffled during training
 N = 64 # Number of sequences in per value of D in Trainings_Ds
 # Mean and variance of the trajectories of Ds
+#TrainingDs_list = [[1, 1], [3, 1], [5, 1], [7, 1]]
 TrainingDs_list = [[1, 1], [3, 1], [5, 1], [7, 1]]
 
 printParams = True
@@ -142,7 +144,7 @@ for cycle in range(num_cycles):
 
     # Mix Trajectories
     if mix_trajectories:
-        num_sequences_per_label = all_videos.shape[0] // len(val_labels)  # Number of sequences per label
+        num_sequences_per_label = all_videos.shape[0] // len(TrainingDs_list)  # Number of sequences per label
         quarter_sequences = num_sequences_per_label // 4  # N/4 sequences per label
 
         # Define the mixing pairs (modularly specify which labels to mix)
@@ -187,7 +189,7 @@ for cycle in range(num_cycles):
 
     # Create a dataset and shuffle
     dataset = ImageDataset(all_videos, all_labels)
-    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle= mix_trajectories or shuffle)
 
 
     # Training Loop

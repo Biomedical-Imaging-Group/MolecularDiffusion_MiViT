@@ -6,10 +6,10 @@ from helpersGeneration import *
 
 # Models settings
 loss_function = nn.MSELoss()
-single_prediction = False
-use_regression_token = False
-use_pos_encoding = True
-tr_activation_fct = F.elu
+single_prediction = True
+use_regression_token = True
+use_pos_encoding = False
+tr_activation_fct = F.leaky_relu
 # tr_activation_fct = F.LeakyReLU, F.GELU F.ReLU
 
 # Define model hyperparameters
@@ -28,27 +28,27 @@ nPosPerFrame = 10
 nFrames = 30 # = Seuence length
 T = nFrames * nPosPerFrame
 # number of trajectories
-background_mean, background_sigma = 0,00
-part_mean, part_sigma = 500,20
+background_mean, background_sigma = 100,0
+part_mean, part_sigma = 500,5
 image_props={"upsampling_factor":5,
       "background_intensity": [background_mean,background_sigma],
       "particle_intensity": [part_mean,part_sigma],
-      "resolution": 100e-9,
-      "psf_division_factor": 2,
+      "resolution": 130e-9,
+      "psf_division_factor": 1.5,
       "trajectory_unit" : 1000,
       "output_size": 7,
-      "poisson_noise" : 1}
+      "poisson_noise" : -1}
 
 
 
 # Change this function to 
-def getTrainingModels():
+def getTrainingModels(lr=1e-4):
 
     # Get all transformer models, _s stands for small, _b for big models
     models = get_transformer_models(patch_size, embed_dim, num_heads, hidden_dim, num_layers, dropout, use_pos_encoding=use_pos_encoding,tr_activation_fct=tr_activation_fct,name_suffix='_s', use_regression_token= use_regression_token, single_prediction=single_prediction)
 
-    models_very_small = get_transformer_models(patch_size, embed_dim//2, num_heads//2, hidden_dim//2, num_layers//2, dropout, use_pos_encoding=use_pos_encoding,tr_activation_fct=tr_activation_fct,name_suffix='_vs', use_regression_token= use_regression_token, single_prediction=single_prediction)
-    models.update(models_very_small)
+    #models_very_small = get_transformer_models(patch_size, embed_dim//2, num_heads//2, hidden_dim//2, num_layers//2, dropout, use_pos_encoding=use_pos_encoding,tr_activation_fct=tr_activation_fct,name_suffix='_vs', use_regression_token= use_regression_token, single_prediction=single_prediction)
+    #models.update(models_very_small)
     """
     cnn_big =  GeneralTransformer(
         embedding_cls=CNNEmbedding,
@@ -87,12 +87,14 @@ def getTrainingModels():
     models.update({"resnet": resnet})
 
     # Create 1 optimizer and scheuler for each model
-    optimizers = {name: optim.AdamW(model.parameters(), lr=1e-4) for name, model in models.items()}
+    optimizers = {name: optim.AdamW(model.parameters(), lr=lr) for name, model in models.items()}
     schedulers = {name: optim.lr_scheduler.StepLR(opt, step_size=5, gamma=0.9) for name, opt in optimizers.items()}
 
     return models, optimizers, schedulers
 
 
+val_d_in_order = np.arange(0.1,7.01,0.1)
+N_in_order = 10 # number of particles
 
 def load_validation_data(length = 20):
 
@@ -104,6 +106,7 @@ def load_validation_data(length = 20):
     trajs3 = np.load("./valTrajs"+str(length)+"/val3.npy") /traj_div_factor
     trajs5 = np.load("./valTrajs"+str(length)+"/val5.npy") /traj_div_factor
     trajs7 = np.load("./valTrajs"+str(length)+"/val7.npy") /traj_div_factor
+    trajs_in_order = np.load("./valTrajsInOrder.npy") /traj_div_factor
 
 
     vid1 = trajectories_to_video(trajs1,nPosPerFrame,center=True,image_props=image_props)
@@ -118,7 +121,13 @@ def load_validation_data(length = 20):
     vid7 = trajectories_to_video(trajs7,nPosPerFrame,center=True,image_props=image_props)
     vid7,_ = normalize_images(vid7,background_mean,background_sigma,part_mean+background_mean)
 
-    return torch.Tensor(vid1),torch.Tensor(vid3), torch.Tensor(vid5), torch.Tensor(vid7)
+
+    trajs_in_order = trajs_in_order.reshape(-1,T,2)
+    vid_in_order =  trajectories_to_video(trajs_in_order,nPosPerFrame,center=True,image_props=image_props)
+    vid_in_order = vid_in_order.reshape(len(val_d_in_order),10,nFrames,patch_size,patch_size)
+    vid_in_order,_ = normalize_images(vid_in_order,background_mean,background_sigma,part_mean+background_mean)
+
+    return torch.Tensor(vid1),torch.Tensor(vid3), torch.Tensor(vid5), torch.Tensor(vid7), torch.Tensor(vid_in_order)
 
 
 
@@ -178,6 +187,7 @@ def get_transformer_models(patch_size = patch_size, embed_dim = embed_dim, num_h
             use_regression_token=use_regression_token,
             single_prediction=single_prediction
         ),
+        
         "cnn_1layer"+ name_suffix: GeneralTransformer(
             embedding_cls=CNNEmbedding,
             embed_kwargs=embed_kwargs,
