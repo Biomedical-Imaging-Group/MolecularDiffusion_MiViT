@@ -5,7 +5,7 @@ from helpersGeneration import *
 # Define settings needed in the other files
 
 # Models settings
-loss_function = nn.MSELoss()
+loss_function = nn.L1Loss()
 single_prediction = True
 use_regression_token = True
 use_pos_encoding = False

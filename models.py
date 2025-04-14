@@ -313,7 +313,7 @@ class GeneralTransformer(nn.Module):
                 return self.mlp_head(x)  # Shape: [batch_size, num_images, 1]
 
 
-# Resnet Model:
+# --------------- ResNet Model --------------- #
 
 class BasicBlock(nn.Module):
     expansion = 1
