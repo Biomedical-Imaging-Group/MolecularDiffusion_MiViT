@@ -4,12 +4,24 @@ from helpersGeneration import *
 
 # Define settings needed in the other files
 
-# Models settings
-loss_function = nn.L1Loss()
-single_prediction = True
-use_regression_token = True
-use_pos_encoding = False
-tr_activation_fct = F.leaky_relu
+sequences = True
+
+if(sequences):
+    # Models settings
+    loss_function = nn.MSELoss()
+    single_prediction = False
+    use_regression_token = False
+    use_pos_encoding = True
+    tr_activation_fct = F.relu
+else:
+    # Models settings
+    loss_function = nn.L1Loss()
+    single_prediction = True
+    use_regression_token = True
+    use_pos_encoding = False
+    tr_activation_fct = F.leaky_relu
+
+
 # tr_activation_fct = F.LeakyReLU, F.GELU F.ReLU
 
 # Define model hyperparameters

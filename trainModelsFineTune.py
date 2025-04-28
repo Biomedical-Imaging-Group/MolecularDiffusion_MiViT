@@ -44,7 +44,6 @@ num_cycles = 2  # Number of dataset refreshes
 shuffle = True # if trajectories should be shuffled during training
 N = 10 # Number of sequences in per value of D in Trainings_Ds
 # Mean and variance of the trajectories of Ds
-TrainingDs_list = [[1, 1], [3, 1], [5, 1], [7, 1]]
 printParams = True
 verbose = False
 
