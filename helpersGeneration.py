@@ -1,9 +1,8 @@
 import numpy as np
-import numpy as np
 from concurrent.futures import ProcessPoolExecutor
 import multiprocessing
 from andi_datasets.models_phenom import models_phenom
-
+from skimage.measure import block_reduce
 
 
 def brownian_motion(nparticles, nframes, nposframe, D, dt, startAtZero=False):
@@ -97,7 +96,6 @@ def gaussian_2d(xc, yc, sigma, grid_size, amplitude):
     return gauss
 
 
-from skimage.measure import block_reduce
 
 def generateImages(trajectory, nframes, npixel, factor_hr, nposframe, fwhm_psf, pixelsize, flux, background, gaussian_noise):
     """
@@ -209,7 +207,7 @@ def trajectories_to_video(
         ],  # Mean and standard deviation of the particle intensity
         "NA": 1.46,  # Numerical aperture
         "wavelength": 500e-9,  # Wavelength
-        "psf_division_factor": 1,  # Wavelength
+        "psf_division_factor": 1, 
         "resolution": 100e-9,  # Camera resolution or effective resolution, aka pixelsize
         "output_size": 32,
         "upsampling_factor": 5,
@@ -237,8 +235,8 @@ def trajectories_to_video(
     #https://www.sciencedirect.com/science/article/pii/S0005272819301380?via%3Dihub
     fwhm_psf = _image_dict["wavelength"] / 2 * _image_dict["NA"] / psf_div_factor
 
-
-    gaussian_sigma = upsampling_factor/resolution * fwhm_psf/2.355
+    
+    gaussian_sigma = upsampling_factor/ resolution * fwhm_psf/2.355
     poisson_noise = _image_dict["poisson_noise"]
     
     out_videos = np.zeros((N,nFrames,output_size,output_size),np.float32)
@@ -295,15 +293,16 @@ def trajectory_to_video(out_video,trajectory,nFrames, output_size, upsampling_fa
 
         # Generate frame, convolution, resampling, noise
         for p in range(nPosPerFrame):
-            spot_intensity = np.random.normal(particle_mean/nPosPerFrame,particle_std/nPosPerFrame)
-            frame_spot = gaussian_2d(xtraj[p], ytraj[p], gaussian_sigma, output_size*upsampling_factor, spot_intensity)
+            if(particle_mean >0.0001 and particle_std > 0.0001):
+                spot_intensity = np.random.normal(particle_mean/nPosPerFrame,particle_std/nPosPerFrame)
+                frame_spot = gaussian_2d(xtraj[p], ytraj[p], gaussian_sigma, output_size*upsampling_factor, spot_intensity)
 
-            # gaussian_2d maximum is not always the wanted one because of some misplaced pixels. 
-            # We can force the peak of the gaussian to have the right intensity
-            spot_max = np.max(frame_spot)
-            if(spot_max < 0.00001):
-                print("Particle Left the image")
-            frame_hr += spot_intensity/spot_max * frame_spot
+                # gaussian_2d maximum is not always the wanted one because of some misplaced pixels. 
+                # We can force the peak of the gaussian to have the right intensity
+                spot_max = np.max(frame_spot)
+                if(spot_max < 0.00001):
+                    print("Particle Left the image")
+                frame_hr += spot_intensity/spot_max * frame_spot
         
         frame_lr = block_reduce(frame_hr, block_size=upsampling_factor, func=np.mean)
         # Add Gaussian noise to background intensity across the image
@@ -429,7 +428,7 @@ import numpy as np
 import matplotlib as plt
 import matplotlib.animation as animation
 import matplotlib.pyplot as plt
-from IPython.display import HTML
+from IPython.display import HTML, display
 import numpy as np
 
 
@@ -501,7 +500,7 @@ def show_plt(plt, title, xlabel='', ylabel='',legend=False):
     plt.show()
 
 
-def play_video(video, figsize=(5, 5), fps=5, vmin=None, vmax=None, save_path=None):
+def play_video(video, figsize=(5, 5), fps=5, vmin=None, vmax=None, save_path=None, no_borders=False):
     """
     Displays a stack of images as a video inside jupyter notebooks with consistent intensity scaling.
 
@@ -530,6 +529,9 @@ def play_video(video, figsize=(5, 5), fps=5, vmin=None, vmax=None, save_path=Non
         video = np.expand_dims(video,axis=-1)
 
     plt.axis("off")
+    if(no_borders):
+        # Adjust layout to remove borders
+        plt.subplots_adjust(left=0, right=1, top=1, bottom=0)
     
     # If vmin/vmax not provided, compute global min/max across all frames
     if vmin is None:
