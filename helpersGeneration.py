@@ -170,7 +170,8 @@ def trajectories_to_video(
             
             '`poisson_noise`' : float
                 If poisson noise should be added after all the other operations. if amount of noise specified is -1, no noise is added
-                Default value is 1, normal amount of poisson noise
+                Default value is 100, normal amount of poisson noise. Lower values generate more noise and higher values less noise
+                Adding Poisson noise replicated the microscope's error rate, where observed noise is a right tail skewed gaussian
             
             '`trajectory_unit`' : int
                 Unit of the trajectory, -1: pixels , which means the trajectory will not be divided by the resolution, or positive int value (standard value 100nm) which means the trajectory will be divided by resolution. 
@@ -215,7 +216,7 @@ def trajectories_to_video(
             100,
             10,
         ],  # Standard deviation of background intensity within a video
-        "poisson_noise": 1,
+        "poisson_noise": 100,
         "trajectory_unit" : 100
     }
 
@@ -289,12 +290,14 @@ def trajectory_to_video(out_video,trajectory,nFrames, output_size, upsampling_fa
         xtraj = trajectory_segment[:,0]  * upsampling_factor
         ytraj = trajectory_segment[:,1] * upsampling_factor
 
+        # since there can be some variability in frame intensity in real data, sample from gaussian
+        frame_intensity = np.random.normal(particle_mean,particle_std)
         
 
         # Generate frame, convolution, resampling, noise
         for p in range(nPosPerFrame):
             if(particle_mean >0.0001 and particle_std > 0.0001):
-                spot_intensity = np.random.normal(particle_mean/nPosPerFrame,particle_std/nPosPerFrame)
+                spot_intensity = frame_intensity / nPosPerFrame
                 frame_spot = gaussian_2d(xtraj[p], ytraj[p], gaussian_sigma, output_size*upsampling_factor, spot_intensity)
 
                 # gaussian_2d maximum is not always the wanted one because of some misplaced pixels. 
@@ -311,7 +314,7 @@ def trajectory_to_video(out_video,trajectory,nFrames, output_size, upsampling_fa
         
         # Add poisson noise if specified
         if poisson_noise != -1:
-            frame_lr = np.random.poisson(frame_lr * poisson_noise) / poisson_noise
+            frame_lr = frame_lr * np.random.poisson(poisson_noise, size=(frame_lr.shape)) / poisson_noise
 
         out_video[f,:] = frame_lr
 
