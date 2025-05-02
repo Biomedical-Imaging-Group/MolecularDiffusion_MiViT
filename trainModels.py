@@ -132,7 +132,7 @@ for cycle in range(num_cycles):
 
         # Convert trajectories of D (pixels/s) to D (micro_m/ms)
         trajs = trajs / traj_div_factor
-        videos = trajectories_to_video(trajs, nPosPerFrame, center=True, image_props=image_props)
+        videos = trajectories_to_video(trajs, nPosPerFrame, center=center, image_props=image_props)
         videos, _ = normalize_images(videos, background_mean, background_sigma, part_mean + background_mean)
 
         all_videos.append(videos)

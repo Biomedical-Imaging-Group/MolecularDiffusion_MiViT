@@ -226,7 +226,8 @@ def trajectories_to_video(
     traj_unit = _image_dict["trajectory_unit"]
     
     if(traj_unit !=-1 ):
-        trajectories = trajectories * traj_unit* 1e-9 / resolution
+        # put the trajectory in pixels
+        trajectories = trajectories * traj_unit / (resolution* 1e9)
 
     output_size = _image_dict["output_size"]
     upsampling_factor = _image_dict["upsampling_factor"]
@@ -290,14 +291,12 @@ def trajectory_to_video(out_video,trajectory,nFrames, output_size, upsampling_fa
         xtraj = trajectory_segment[:,0]  * upsampling_factor
         ytraj = trajectory_segment[:,1] * upsampling_factor
 
-        # since there can be some variability in frame intensity in real data, sample from gaussian
-        frame_intensity = np.random.normal(particle_mean,particle_std)
         
 
         # Generate frame, convolution, resampling, noise
         for p in range(nPosPerFrame):
             if(particle_mean >0.0001 and particle_std > 0.0001):
-                spot_intensity = frame_intensity / nPosPerFrame
+                spot_intensity = np.random.normal(particle_mean/nPosPerFrame,particle_std/nPosPerFrame)
                 frame_spot = gaussian_2d(xtraj[p], ytraj[p], gaussian_sigma, output_size*upsampling_factor, spot_intensity)
 
                 # gaussian_2d maximum is not always the wanted one because of some misplaced pixels. 

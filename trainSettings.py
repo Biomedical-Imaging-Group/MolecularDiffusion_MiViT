@@ -4,7 +4,8 @@ from helpersGeneration import *
 
 # Define settings needed in the other files
 
-sequences = True
+sequences = False
+center = True
 
 if(sequences):
     # Models settings
@@ -18,14 +19,14 @@ else:
     loss_function = nn.L1Loss()
     single_prediction = True
     use_regression_token = True
-    use_pos_encoding = False
+    use_pos_encoding = True
     tr_activation_fct = F.leaky_relu
 
 
 # tr_activation_fct = F.LeakyReLU, F.GELU F.ReLU
 
 # Define model hyperparameters
-patch_size = 7
+patch_size = 9
 embed_dim = 64
 num_heads = 4
 hidden_dim = 128
@@ -40,16 +41,28 @@ nPosPerFrame = 10
 nFrames = 30 # = Seuence length
 T = nFrames * nPosPerFrame
 # number of trajectories
-background_mean, background_sigma = 100,0
-part_mean, part_sigma = 500,5
-image_props={"upsampling_factor":5,
-      "background_intensity": [background_mean,background_sigma],
-      "particle_intensity": [part_mean,part_sigma],
-      "resolution": 130e-9,
-      "psf_division_factor": 1.5,
-      "trajectory_unit" : 1000,
-      "output_size": 7,
-      "poisson_noise" : -1}
+part_mean, part_std = 5500,500
+background_mean,background_sigma = 1400, 290
+
+image_props = {
+    "particle_intensity": [
+        part_mean - background_mean,
+        part_std,
+    ],  # Mean and standard deviation of the particle intensity
+    "NA": 1.46,  # Numerical aperture
+    "wavelength": 500e-9,  # Wavelength
+    "psf_division_factor": 1.3,  
+    "resolution": 100e-9,  # Camera resolution or effective resolution, aka pixelsize
+    "output_size": patch_size,
+    "upsampling_factor": 5,
+    "background_intensity": [
+        background_mean,
+        background_sigma,
+    ],  # Standard deviation of background intensity within a video
+    "poisson_noise": 100,
+    "trajectory_unit" : 500
+}
+
 
 
 
@@ -95,7 +108,7 @@ def getTrainingModels(lr=1e-4):
     models.update({"deep_cnn_b": deep_cnn_big})
 
     """
-    resnet = MultiImageLightResNet(patch_size, single_prediction=single_prediction, activation=nn.SiLU)
+    resnet = MultiImageLightResNet(patch_size, single_prediction=single_prediction, activation=nn.LeakyReLU)
     models.update({"resnet": resnet})
 
     # Create 1 optimizer and scheuler for each model
