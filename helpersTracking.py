@@ -4,6 +4,9 @@ from skimage.feature import peak_local_max
 import matplotlib.animation as animation
 import matplotlib.pyplot as plt
 from IPython.display import HTML, display
+import seaborn as sns
+
+
 
 
 def detect_particles(image, sigma1=1.0, sigma2=2.0, threshold_percentage=0.1, min_distance=3):
@@ -309,6 +312,25 @@ def track_particles(image_sequence, sigma1=1.0, sigma2=2.0, threshold_percentage
     # Filter tracks by length
     long_tracks = {k: v for k, v in tracks.items() if len(v) >= min_track_length}
     
+    # Re-index tracks to have sequential IDs
+    reindexed_tracks = {}
+    all_detections_copy = all_detections.copy()  # Create a copy to avoid modifying the original
+
+    # Create a mapping from old to new track IDs
+    track_id_mapping = {old_id: new_id for new_id, old_id in enumerate(sorted(long_tracks.keys()))}
+
+    # Re-index the long_tracks dictionary
+    for old_id, new_id in track_id_mapping.items():
+        reindexed_tracks[new_id] = long_tracks[old_id]
+
+    # Update track IDs in the all_detections DataFrame
+    all_detections_copy.loc[all_detections_copy['track_id'].isin(long_tracks.keys()), 'track_id'] = \
+        all_detections_copy.loc[all_detections_copy['track_id'].isin(long_tracks.keys()), 'track_id'].map(track_id_mapping)
+
+    # Replace the original variables
+    long_tracks = reindexed_tracks
+    all_detections = all_detections_copy
+
     print(f"Tracking complete: {len(tracks)} total tracks, {len(long_tracks)} tracks with ≥{min_track_length} frames")
     
     return long_tracks, all_detections, all_filtered_images
@@ -486,3 +508,276 @@ def analyze_microscopy_sequence(image_sequence,
         print(f"Results saved with prefix: {output_prefix}")
     
     return tracks, all_detections, filtered_images
+
+
+def extract_particle_patches(image_3d, tracks, patch_size=7):
+    """
+    Extract square patches around each particle's position in each frame.
+
+    Parameters:
+    -----------
+    image_3d : np.ndarray
+        3D array of shape (num_frames, height, width).
+    tracks : dict
+        Dictionary where keys are track IDs and values are lists of (frame, y, x) positions.
+    patch_size : int
+        Size of the square patch (must be odd).
+
+    Returns:
+    --------
+    patches : dict
+        Dictionary where each key is a track ID and value is a list of 2D numpy arrays
+        of shape (patch_size, patch_size), one per position in the track.
+    """
+    assert patch_size % 2 == 1, "patch_size must be an odd number"
+    half = patch_size // 2
+    num_frames, height, width = image_3d.shape
+
+    patches = {}
+
+    for track_id, positions in tracks.items():
+        track_patches = []
+        for frame, y, x in positions:
+            
+            y, x = int(round(y)), int(round(x))
+            # Pad the image if the patch would go out of bounds
+            padded = np.pad(image_3d[frame], pad_width=half, mode='constant')
+            y_p, x_p = y + half, x + half  # shift coords due to padding
+            patch = padded[y_p - half:y_p + half + 1, x_p - half:x_p + half + 1]
+            track_patches.append(patch)
+        patches[track_id] = np.array(track_patches)
+
+    return patches
+import numpy as np
+import pandas as pd
+from scipy.optimize import curve_fit
+
+def add_refined_localization_to_dataframe(df_tracks, tracks, patches, patch_size):
+    """
+    Add sub-pixel localization, PSF size (sigma), and max intensity per frame to DataFrame.
+    """
+    def symmetrical_gaussian(coords, amplitude, xo, yo, sigma, offset):
+        x, y = coords
+        g = offset + amplitude * np.exp(
+            -(((x - xo)**2 + (y - yo)**2) / (2 * sigma**2))
+        )
+        return g.ravel()
+
+    half = patch_size // 2
+
+    x_refined_list = []
+    y_refined_list = []
+    sigma_list = []
+    intensity_list = []
+
+    for track_id, original_positions in tracks.items():
+        track_patches = patches[track_id]
+        for i, (frame, y_int, x_int) in enumerate(original_positions):
+            patch = track_patches[i]
+            x = np.arange(patch.shape[1])
+            y = np.arange(patch.shape[0])
+            x, y = np.meshgrid(x, y)
+
+            initial_guess = (patch.max(), half, half, 1.0, patch.min())
+
+            try:
+                popt, _ = curve_fit(symmetrical_gaussian, (x, y), patch.ravel(), p0=initial_guess)
+                _, x0, y0, sigma, _ = popt
+                refined_x = x_int - half + x0
+                refined_y = y_int - half + y0
+            except RuntimeError:
+                print(f"particle {track_id} could not be located on frame {frame}")
+                refined_x = x_int
+                refined_y = y_int
+                sigma = 10
+
+            key = (track_id, frame)
+            x_refined_list.append((key, refined_x))
+            y_refined_list.append((key, refined_y))
+            sigma_list.append((key, sigma))
+            intensity_list.append((key, patch.max()))
+
+    df_tracks['x_refined'] = pd.Series(dict(x_refined_list))
+    df_tracks['y_refined'] = pd.Series(dict(y_refined_list))
+    df_tracks['psf_size'] = pd.Series(dict(sigma_list))
+    df_tracks['max_intensity'] = pd.Series(dict(intensity_list))
+
+    return df_tracks
+
+
+def compute_displacement(df_tracks):
+    """
+    Compute displacement, mean displacement, mean PSF size, and max intensity over track.
+    """
+    displacements = []
+    mean_displacements = {}
+    mean_psf_sizes = {}
+    max_intensities = {}
+    mean_intensities = {}
+    std_intensities = {}
+
+    df_tracks_reset = df_tracks.reset_index()
+
+    for track_id, group in df_tracks_reset.groupby('track_id'):
+        group = group.sort_values('frame')
+        track_displacements = []
+
+        for i in range(1, len(group)):
+            x1, y1 = group.iloc[i-1][['x_refined', 'y_refined']]
+            x2, y2 = group.iloc[i][['x_refined', 'y_refined']]
+            displacement = np.sqrt((x2 - x1)**2 + (y2 - y1)**2)
+            track_displacements.append(displacement)
+
+        track_displacements.insert(0, 0)
+        df_tracks_reset.loc[group.index, 'displacement'] = track_displacements
+
+        mean_displacements[track_id] = np.mean(track_displacements)
+        mean_psf_sizes[track_id] = group['psf_size'].mean()
+        max_intensities[track_id] = group['max_intensity'].max()
+        mean_intensities[track_id] = group['max_intensity'].mean()
+        std_intensities[track_id] = group['max_intensity'].std()
+
+    df_tracks_reset.set_index(['track_id', 'frame'], inplace=True)
+    df_tracks_reset['mean_displacement'] = df_tracks_reset.index.get_level_values('track_id').map(mean_displacements)
+    df_tracks_reset['mean_psf_size'] = df_tracks_reset.index.get_level_values('track_id').map(mean_psf_sizes)
+    df_tracks_reset['max_intensity_over_track'] = df_tracks_reset.index.get_level_values('track_id').map(max_intensities)
+    df_tracks_reset['mean_max_intensity_over_track'] = df_tracks_reset.index.get_level_values('track_id').map(mean_intensities)
+    df_tracks_reset['std_max_intensity_over_track'] = df_tracks_reset.index.get_level_values('track_id').map(std_intensities)
+
+    return df_tracks_reset
+
+
+
+
+
+def tracks_to_dataframe(tracks, patches, patch_size):
+    """
+    Convert tracks dictionary into a pandas DataFrame indexed by (track_id, frame)
+    and containing x and y positions.
+
+    Parameters:
+    -----------
+    tracks : dict
+        Dictionary where keys are track IDs and values are lists of (frame, y, x) positions.
+
+    Returns:
+    --------
+    df : pandas.DataFrame
+        DataFrame indexed by (track_id, frame) with columns 'x' and 'y'.
+    """
+    data = []
+    for track_id, positions in tracks.items():
+        nbr_frames = len(positions)
+        for frame, y, x in positions:
+            data.append((track_id, frame,nbr_frames, x, y))
+    
+    df = pd.DataFrame(data, columns=['track_id', 'frame', 'nbr_frames','x', 'y'])
+    df.set_index(['track_id', 'frame'], inplace=True)
+    df.sort_index(inplace=True)  # Optional: to have it ordered by track and frame
+
+    df = add_refined_localization_to_dataframe(df, tracks, patches, patch_size=patch_size)
+    df = compute_displacement(df)
+
+    return df
+
+
+import matplotlib.pyplot as plt
+import pandas as pd
+
+def plot_comparison_with_std(df_under, df_over, columns):
+    """
+    Plot mean ± std for selected columns from two DataFrames (under and over threshold).
+
+    Parameters:
+    -----------
+    df_under : pd.DataFrame
+        DataFrame for tracks under the threshold (multi-indexed).
+    df_over : pd.DataFrame
+        DataFrame for tracks over the threshold (multi-indexed).
+    columns : list of str
+        List of column names to include in the plot.
+    scale : bool
+        If True, values are scaled using StandardScaler before plotting.
+    """
+    # Aggregate one row per track
+    df_under_grouped = df_under.groupby(level=0).first()[columns]
+    df_over_grouped = df_over.groupby(level=0).first()[columns]
+
+    df_under_scaled = df_under_grouped
+    df_over_scaled = df_over_grouped
+
+    # Compute mean and std
+    means = pd.DataFrame({
+        'Under 3': df_under_scaled.mean(),
+        'Over 3': df_over_scaled.mean()
+    })
+
+    stds = pd.DataFrame({
+        'Under 3': df_under_scaled.std(),
+        'Over 3': df_over_scaled.std()
+    })
+
+    # Plot
+    fig, ax = plt.subplots(figsize=(12, 6))
+    width = 0.35
+    x = range(len(columns))
+
+    ax.bar([i - width/2 for i in x], means['Under 3'], width, yerr=stds['Under 3'], label='Under 3', capsize=4)
+    ax.bar([i + width/2 for i in x], means['Over 3'], width, yerr=stds['Over 3'], label='Over 3', capsize=4)
+
+    ax.set_xticks(x)
+    ax.set_xticklabels(columns, rotation=45, ha='right')
+    ax.set_ylabel('Mean ± STD')
+    ax.set_title('Comparison of Selected Metrics')
+    ax.legend()
+    plt.tight_layout()
+    plt.show()
+
+
+def plotPointsVsFeature(df, features, x_feat, chosen_models):
+    # Extract per-track values (as done before)
+    track_level_df = df.groupby(level=0).first()[
+        features
+    ]
+
+    # Plot
+    plt.figure(figsize=(8, 6))
+
+    # Loop over each model prediction column
+    for column in chosen_models:
+        plt.scatter(track_level_df[x_feat], track_level_df[column], label=column, alpha=0.7)
+
+    plt.xlabel('Mean Displacement')
+    plt.ylabel('Predicted Diffusion Coefficient')
+    plt.title('Model Predictions vs Mean Displacement')
+    plt.legend()
+    plt.grid(True)
+    plt.tight_layout()
+    plt.show()
+
+
+def computeCorrforFeaturesPlotCorr(df, features, index='track_id'):
+
+    # Step 1: Reset index to access 'track_id' as a column
+    df_per_frame = df.reset_index()
+
+    # Step 2: Drop duplicates to get one row per track (since these values are constant within each track)
+    df_per_track = df_per_frame.drop_duplicates(subset='track_id')[
+        features
+    ].set_index('track_id')
+
+    # Step 3: Compute Pearson correlation matrix
+    correlation_matrix = df_per_track.corr()
+
+    # Step 4: Extract correlations with 'mean_displacement'
+    correlation_with_disp = correlation_matrix['mean_max_intensity_over_track'][['D_resnet', 'D_cnn1', 'D_cnn2']]
+
+    print("Correlation between mean_displacement and each model prediction:")
+    print(correlation_with_disp)
+    sns.heatmap(correlation_matrix, annot=True, fmt=".2f", cmap='coolwarm')
+    plt.title("Correlation Matrix (per track)")
+    plt.tight_layout()
+    plt.show()
+    return correlation_matrix
+
+

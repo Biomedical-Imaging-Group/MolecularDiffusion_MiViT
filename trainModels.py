@@ -22,10 +22,10 @@ for name in models:
     models[name] = models[name].to(device)
 
 ### Training Settings ###
-num_cycles = 20  # Number of dataset refreshes
+num_cycles = 50  # Number of dataset refreshes
 # ToDo: Try if reducing batch_size makes the model learn the transitions
 # ToDO: Try computing loss per timeStep, or add a loss term that favorises transitions see https://chatgpt.com/c/67efd8f6-52a4-8010-a0ca-09ea0b60fa3e
-batch_size = 8 # Number of sequences in 1 batch
+batch_size = 16 # Number of sequences in 1 batch
 shuffle = True # if trajectories should be shuffled during training
 N = 64 # Number of sequences in per value of D in Trainings_Ds
 # Mean and variance of the trajectories of Ds

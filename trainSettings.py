@@ -16,7 +16,7 @@ if(sequences):
     tr_activation_fct = F.relu
 else:
     # Models settings
-    loss_function = nn.L1Loss()
+    loss_function = nn.MSELoss()
     single_prediction = True
     use_regression_token = True
     use_pos_encoding = True
