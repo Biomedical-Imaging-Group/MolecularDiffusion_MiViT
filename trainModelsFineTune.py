@@ -16,16 +16,15 @@ print("Using device:", device)
 # Most of models settings are in Train_settings for unity
 # Type of training: mixTrajectories for learning trajectories with a switch in the middle
 mix_trajectories = True and not single_prediction
-models, optimizers, schedulers = getTrainingModels(lr=1e-5)
+models, optimizers, schedulers = getTrainingModels(lr=1e-6, try_leaky_relu=True)
 
 for name in models:
     models[name] = models[name].to(device)
 
 
 
-models, optimizers, schedulers = getTrainingModels()
 
-results = torch.load("training_results_single.pth",map_location=torch.device('cpu'))
+results = torch.load("training_results_real2.pth",map_location=torch.device('cpu'))
 model_weights = results["model_weights"]
 
 # Load model weights
@@ -38,11 +37,11 @@ for name, model in models.items():
 
 
 ### Training Settings ###
-num_cycles = 2  # Number of dataset refreshes
+num_cycles = 5  # Number of dataset refreshes
 # ToDo: Try if reducing batch_size makes the model learn the transitions
 # ToDO: Try computing loss per timeStep, or add a loss term that favorises transitions see https://chatgpt.com/c/67efd8f6-52a4-8010-a0ca-09ea0b60fa3e
 shuffle = True # if trajectories should be shuffled during training
-N = 10 # Number of sequences in per value of D in Trainings_Ds
+N = 20 # Number of sequences in per value of D in Trainings_Ds
 # Mean and variance of the trajectories of Ds
 printParams = True
 verbose = False
@@ -52,11 +51,13 @@ tr_losses = {name:[] for name in models.keys()}
 
 if(printParams):
     print("StartTime: ",datetime.datetime.now())
-train_d_in_order = np.arange(0.1, 7.001, 0.1)
+low = np.arange(0.1, 2.001, 0.1)
+high = np.arange(6, 8.001, 0.1)
 
-
+train_d_in_order = np.concatenate([low, high])
+print(train_d_in_order.shape)
 #batch_size = len(train_d_in_order) * N
-batch_size = 10
+batch_size = 4
 
 for cycle in range(num_cycles):
 
@@ -128,7 +129,7 @@ for cycle in range(num_cycles):
 
 print(f"Number of generated sequences: {train_d_in_order.shape}")
 # --- Save everything for later analysis ---
-save_path = "training_results_ft.pth"
+save_path = "training_results_ft_real.pth"
 results = {
     "validation_losses": {name:{"val_avg":tr_losses[name]} for name in models.keys()},
     "all_labels": train_d_in_order,  # Convert to NumPy for easier histogram plotting

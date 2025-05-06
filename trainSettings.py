@@ -6,6 +6,10 @@ from helpersGeneration import *
 
 sequences = False
 center = True
+# adaptive batch size doubles the size of batch every adaptive_batch_size cycles
+# set to -1 if no adaptive batch_size 
+adaptive_batch_size = 20
+
 
 if(sequences):
     # Models settings
@@ -20,7 +24,7 @@ else:
     single_prediction = True
     use_regression_token = True
     use_pos_encoding = True
-    tr_activation_fct = F.leaky_relu
+    tr_activation_fct = F.relu
 
 
 # tr_activation_fct = F.LeakyReLU, F.GELU F.ReLU
@@ -41,8 +45,9 @@ nPosPerFrame = 10
 nFrames = 30 # = Seuence length
 T = nFrames * nPosPerFrame
 # number of trajectories
-part_mean, part_std = 5500,500
-background_mean,background_sigma = 1400, 290
+# values from Real data
+part_mean, part_std = 6200,500
+background_mean,background_sigma = 1420, 290
 
 image_props = {
     "particle_intensity": [
@@ -67,11 +72,14 @@ image_props = {
 
 
 # Change this function to 
-def getTrainingModels(lr=1e-4):
+def getTrainingModels(lr=1e-4, try_leaky_relu=False):
 
     # Get all transformer models, _s stands for small, _b for big models
     models = get_transformer_models(patch_size, embed_dim, num_heads, hidden_dim, num_layers, dropout, use_pos_encoding=use_pos_encoding,tr_activation_fct=tr_activation_fct,name_suffix='_s', use_regression_token= use_regression_token, single_prediction=single_prediction)
-
+    
+    if(try_leaky_relu):
+        models_leaky = get_transformer_models(patch_size, embed_dim, num_heads, hidden_dim, num_layers, dropout, use_pos_encoding=use_pos_encoding,tr_activation_fct=F.leaky_relu,name_suffix='_leaky', use_regression_token= use_regression_token, single_prediction=single_prediction)
+        models.update(models_leaky)
     #models_very_small = get_transformer_models(patch_size, embed_dim//2, num_heads//2, hidden_dim//2, num_layers//2, dropout, use_pos_encoding=use_pos_encoding,tr_activation_fct=tr_activation_fct,name_suffix='_vs', use_regression_token= use_regression_token, single_prediction=single_prediction)
     #models.update(models_very_small)
     """
@@ -108,7 +116,7 @@ def getTrainingModels(lr=1e-4):
     models.update({"deep_cnn_b": deep_cnn_big})
 
     """
-    resnet = MultiImageLightResNet(patch_size, single_prediction=single_prediction, activation=nn.LeakyReLU)
+    resnet = MultiImageLightResNet(patch_size, single_prediction=single_prediction, activation=nn.ReLU)
     models.update({"resnet": resnet})
 
     # Create 1 optimizer and scheuler for each model

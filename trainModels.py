@@ -16,16 +16,16 @@ print("Using device:", device)
 # Most of models settings are in Train_settings for unity
 # Type of training: mixTrajectories for learning trajectories with a switch in the middle
 mix_trajectories = True and not single_prediction
-models, optimizers, schedulers = getTrainingModels()
+models, optimizers, schedulers = getTrainingModels(try_leaky_relu=True)
 
 for name in models:
     models[name] = models[name].to(device)
 
 ### Training Settings ###
-num_cycles = 50  # Number of dataset refreshes
+num_cycles = 100  # Number of dataset refreshes
 # ToDo: Try if reducing batch_size makes the model learn the transitions
 # ToDO: Try computing loss per timeStep, or add a loss term that favorises transitions see https://chatgpt.com/c/67efd8f6-52a4-8010-a0ca-09ea0b60fa3e
-batch_size = 16 # Number of sequences in 1 batch
+batch_size = 1 if adaptive_batch_size != -1 else 16 # Number of sequences in 1 batch
 shuffle = True # if trajectories should be shuffled during training
 N = 64 # Number of sequences in per value of D in Trainings_Ds
 # Mean and variance of the trajectories of Ds
@@ -98,6 +98,12 @@ if(printParams):
 
 
 for cycle in range(num_cycles):
+    
+    # adaptive batch size doubles the size of batch every adaptive_batch_size cycles
+    #https://arxiv.org/abs/1712.02029
+    if(adaptive_batch_size != -1 and cycle != 0 and cycle % adaptive_batch_size == 0):
+        batch_size = batch_size * 2
+        print(f"Cycle: {cycle} new batch size: {batch_size}")
 
     print(f"Cycle {cycle+1} out of {num_cycles}: {(cycle+1)/num_cycles * 100:.2f}%")
     # Generate a new batch of images and labels
