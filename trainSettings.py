@@ -10,6 +10,8 @@ center = True
 # set to -1 if no adaptive batch_size 
 adaptive_batch_size = 20
 
+D_max_normalization = 10
+
 
 if(sequences):
     # Models settings
@@ -206,49 +208,6 @@ def get_transformer_models(patch_size = patch_size, embed_dim = embed_dim, num_h
             use_regression_token=use_regression_token,
             single_prediction=single_prediction
         ),
-        "linear_1layer"+ name_suffix: GeneralTransformer(
-            embedding_cls=LinearProjectionEmbedding,
-            embed_kwargs=embed_kwargs,
-            embed_dim=embed_dim,
-            num_heads=num_heads,
-            hidden_dim=hidden_dim,
-            num_layers=num_layers,
-            mlp_head=oneLayerMLP,
-            tr_activation_fct=tr_activation_fct,
-            dropout=dropout,
-            use_pos_encoding=use_pos_encoding,
-            use_regression_token=use_regression_token,
-            single_prediction=single_prediction
-        ),
-        
-        "cnn_1layer"+ name_suffix: GeneralTransformer(
-            embedding_cls=CNNEmbedding,
-            embed_kwargs=embed_kwargs,
-            embed_dim=embed_dim,
-            num_heads=num_heads,
-            hidden_dim=hidden_dim,
-            num_layers=num_layers,
-            mlp_head=oneLayerMLP,
-            tr_activation_fct=tr_activation_fct,
-            dropout=dropout,
-            use_pos_encoding=use_pos_encoding,
-            use_regression_token=use_regression_token,
-            single_prediction=single_prediction
-        ),
-        "deepcnn_1layer"+ name_suffix: GeneralTransformer(
-            embedding_cls=DeepResNetEmbedding,
-            embed_kwargs=embed_kwargs,
-            embed_dim=embed_dim,
-            num_heads=num_heads,
-            hidden_dim=hidden_dim,
-            num_layers=num_layers,
-            mlp_head=oneLayerMLP,
-            tr_activation_fct=tr_activation_fct,
-            dropout=dropout,
-            use_pos_encoding=use_pos_encoding,
-            use_regression_token=use_regression_token,
-            single_prediction=single_prediction
-        ),
         "cnn_2layer"+ name_suffix: GeneralTransformer(
             embedding_cls=CNNEmbedding,
             embed_kwargs=embed_kwargs,
@@ -277,6 +236,7 @@ def get_transformer_models(patch_size = patch_size, embed_dim = embed_dim, num_h
             use_regression_token=use_regression_token,
             single_prediction=single_prediction
         )
+
     }
     
     return models

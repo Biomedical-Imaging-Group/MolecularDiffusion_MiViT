@@ -43,6 +43,9 @@ verbose = False
 val_videos = load_validation_data(nFrames)  # Returns (vid1, vid3, vid5, vid7)
 val_labels = torch.tensor([1, 3, 5, 7], dtype=torch.float32)  # Corresponding labels
 
+# Divide Labels by D_max to have values between 0 and 1 -> better optimizers
+val_labels = val_labels / D_max_normalization
+
 
 # Dictionary to store validation losses per model and dataset type
 validation_losses = {name: {f"val_{label.item()}": [] for label in val_labels} for name in models.keys()}
@@ -135,6 +138,9 @@ for cycle in range(num_cycles):
         # Store all labels
         all_labels.append(labels)
 
+        # Divide Labels by D_max to have values between 0 and 1 -> better optimizers
+        all_labels = all_labels / D_max_normalization
+
 
         # Convert trajectories of D (pixels/s) to D (micro_m/ms)
         trajs = trajs / traj_div_factor
@@ -146,7 +152,8 @@ for cycle in range(num_cycles):
     # Concatenate all generated data
     all_videos = np.concatenate(all_videos, axis=0)
     all_labels = np.concatenate(all_labels, axis=0)
-
+    # Divide Labels by D_max to have values between 0 and 1 -> better optimizers
+    all_labels = all_labels / D_max_normalization
 
     # Mix Trajectories
     if mix_trajectories:
