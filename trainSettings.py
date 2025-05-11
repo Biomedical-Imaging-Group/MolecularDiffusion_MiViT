@@ -9,7 +9,7 @@ center = True
 # adaptive batch size doubles the size of batch every adaptive_batch_size cycles
 # set to -1 if no adaptive batch_size 
 adaptive_batch_size = 20
-
+lr=1e-4
 D_max_normalization = 10
 
 
@@ -48,7 +48,7 @@ nFrames = 30 # = Seuence length
 T = nFrames * nPosPerFrame
 # number of trajectories
 # values from Real data
-part_mean, part_std = 6200,500
+part_mean, part_std = 6200 - 1420,500
 background_mean,background_sigma = 1420, 290
 
 image_props = {
@@ -67,7 +67,7 @@ image_props = {
         background_sigma,
     ],  # Standard deviation of background intensity within a video
     "poisson_noise": 100,
-    "trajectory_unit" : 500
+    "trajectory_unit" : 1200
 }
 
 

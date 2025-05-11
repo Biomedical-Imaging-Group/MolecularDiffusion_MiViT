@@ -3,6 +3,7 @@ from concurrent.futures import ProcessPoolExecutor
 import multiprocessing
 from andi_datasets.models_phenom import models_phenom
 from skimage.measure import block_reduce
+import skimage as ski
 
 
 def brownian_motion(nparticles, nframes, nposframe, D, dt, startAtZero=False):
@@ -352,7 +353,7 @@ def process_one_video(args):
 
 
 
-def normalize_images(images, background_mean=None, background_sigma=None, theoretical_max=None):
+def normalize_images(images, background_mean=None, background_sigma=None, theoretical_max=None, clip_image=False):
     """
     Normalize images according to the formula:
     im_norm = (im - (background_mean - background_sigma)) / (theoretical_max - (background_mean - background_sigma))
@@ -390,8 +391,11 @@ def normalize_images(images, background_mean=None, background_sigma=None, theore
     # Avoid division by zero
     if denominator == 0:
         raise ValueError("Denominator in normalization is zero. Check your inputs.")
-    
+
     normalized = (images - (background_mean - background_sigma)) / denominator
+
+    if clip_image:
+        normalized = np.clip(normalized,0, 1.5)
     
     return normalized, (background_mean, background_sigma, theoretical_max)
 
@@ -414,6 +418,126 @@ def generateTrajAndVideosBrownian(Ds,nPart,nImages,nPosPerFrame,optics_props):
 
 
 
+
+def trajectories_to_video_multiple_settings(
+    trajectories,
+    nPosPerFrame,
+    center = False,
+    image_props={},
+):
+    
+    N,T,_ = trajectories.shape
+
+# Invert the y axis, for video creation purposes where y-axis is inverted
+    trajectories[:, :, 1] *= -1
+
+
+    if(T % nPosPerFrame != 0):
+        raise Exception("T is not divisble by posPerFrame")
+
+    nFrames = T // nPosPerFrame
+
+    _image_dict = {
+        "particle_intensity": [
+            500,
+            20,
+        ],  # Mean and standard deviation of the particle intensity
+        "NA": 1.46,  # Numerical aperture
+        "wavelength": 500e-9,  # Wavelength
+        "psf_division_factor": 1, 
+        "resolution": 100e-9,  # Camera resolution or effective resolution, aka pixelsize
+        "output_size": 32,
+        "upsampling_factor": 5,
+        "background_intensity": [
+            100,
+            10,
+        ],  # Standard deviation of background intensity within a video
+        "poisson_noise": 1,
+        "trajectory_unit" : 100
+    }
+
+    # Update the dictionaries with the user-defined values
+    _image_dict.update(image_props)
+    resolution =_image_dict["resolution"]
+    traj_unit = _image_dict["trajectory_unit"]
+    
+    if(traj_unit !=-1 ):
+        trajectories = trajectories * traj_unit* 1e-9 / resolution
+
+    output_size = _image_dict["output_size"]
+    upsampling_factor = _image_dict["upsampling_factor"]
+    psf_div_factor = _image_dict["psf_division_factor"]
+    
+    # Psf is computed as wavelenght/2NA according to:
+    #https://www.sciencedirect.com/science/article/pii/S0005272819301380?via%3Dihub
+    fwhm_psf = _image_dict["wavelength"] / 2 * _image_dict["NA"] / psf_div_factor
+
+    
+    gaussian_sigma = upsampling_factor/ resolution * fwhm_psf/2.355
+    poisson_noise = _image_dict["poisson_noise"]
+    
+    out_videos_no_noise = np.zeros((N,nFrames,output_size,output_size),np.float32)
+    out_videos_gauss_noise = np.zeros((N,nFrames,output_size,output_size),np.float32)
+    out_videos_Poisson = np.zeros((N,nFrames,output_size,output_size),np.float32)
+    out_videos_RL = np.zeros((N,nFrames,output_size,output_size),np.float32)
+    out_videos_gauss_filter = np.zeros((N,nFrames,output_size,output_size),np.float32)
+
+    particle_mean, particle_std = _image_dict["particle_intensity"][0],_image_dict["particle_intensity"][1]
+    background_mean, background_std = _image_dict["background_intensity"][0],_image_dict["background_intensity"][1]
+    
+    for n in range(N):
+        trajectory_to_videoTest(out_videos_no_noise[n,:],out_videos_gauss_noise[n,:],out_videos_Poisson[n,:],out_videos_RL[n,:],out_videos_gauss_filter[n,:],trajectories[n,:],nFrames,output_size,upsampling_factor,nPosPerFrame,
+                                                gaussian_sigma,particle_mean,particle_std,background_mean,background_std, poisson_noise,center)
+        
+    return out_videos_no_noise,out_videos_gauss_noise, out_videos_Poisson, out_videos_RL, out_videos_gauss_filter
+
+
+def trajectory_to_videoTest(out_video_no_noise,out_video_gauss_noise, out_video_poiss_noise, out_video_RL, out_video_gauss_filter,trajectory,nFrames, output_size, upsampling_factor, nPosPerFrame,gaussian_sigma,particle_mean,particle_std,background_mean,background_std, poisson_noise, center):
+    """Helper function of function above, all arguments documented above"""
+    for f in range(nFrames):
+        frame_hr = np.zeros(( output_size*upsampling_factor, output_size*upsampling_factor),np.float32)
+        frame_lr = np.zeros((output_size, output_size),np.float32)
+
+        start = f*nPosPerFrame
+        end = (f+1)*nPosPerFrame
+        trajectory_segment = (trajectory[start:end,:] - np.mean(trajectory[start:end,:],axis=0) if center else trajectory[start:end,:]) 
+        xtraj = trajectory_segment[:,0]  * upsampling_factor
+        ytraj = trajectory_segment[:,1] * upsampling_factor
+
+        
+
+        # Generate frame, convolution, resampling, noise
+        for p in range(nPosPerFrame):
+            if(particle_mean >0.0001 and particle_std > 0.0001):
+                spot_intensity = np.random.normal(particle_mean/nPosPerFrame,particle_std/nPosPerFrame)
+                frame_spot = gaussian_2d(xtraj[p], ytraj[p], gaussian_sigma, output_size*upsampling_factor, spot_intensity)
+
+                # gaussian_2d maximum is not always the wanted one because of some misplaced pixels. 
+                # We can force the peak of the gaussian to have the right intensity
+                spot_max = np.max(frame_spot)
+                if(spot_max < 0.00001):
+                    print("Particle Left the image")
+                frame_hr += spot_intensity/spot_max * frame_spot
+        
+        frame_lr = block_reduce(frame_hr, block_size=upsampling_factor, func=np.mean)
+        # Add Gaussian noise to background intensity across the image
+        frame_no_noise = frame_lr.copy()
+        frame_lr += np.clip(np.random.normal(background_mean, background_std, frame_lr.shape), 
+                                    0, background_mean + 3 * background_std)
+
+        frame_lr_poisson = np.random.poisson(frame_lr * poisson_noise) / poisson_noise
+
+        # TO CHANGE !!
+        frame_RL = frame_lr
+        frame_gaussian_filter = ski.filters.gaussian(frame_lr_poisson, sigma=0.5)  # mild smoothing
+
+        out_video_no_noise[f,:] = frame_no_noise
+        out_video_gauss_noise[f,:] = frame_lr
+        out_video_poiss_noise[f,:] = frame_lr_poisson
+        out_video_RL[f,:] = frame_RL
+        out_video_gauss_filter[f,:] = frame_gaussian_filter
+
+    return 
 
 
 
