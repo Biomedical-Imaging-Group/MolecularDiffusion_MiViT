@@ -479,20 +479,19 @@ def trajectories_to_video_multiple_settings(
     out_videos_no_noise = np.zeros((N,nFrames,output_size,output_size),np.float32)
     out_videos_gauss_noise = np.zeros((N,nFrames,output_size,output_size),np.float32)
     out_videos_Poisson = np.zeros((N,nFrames,output_size,output_size),np.float32)
-    out_videos_RL = np.zeros((N,nFrames,output_size,output_size),np.float32)
     out_videos_gauss_filter = np.zeros((N,nFrames,output_size,output_size),np.float32)
 
     particle_mean, particle_std = _image_dict["particle_intensity"][0],_image_dict["particle_intensity"][1]
     background_mean, background_std = _image_dict["background_intensity"][0],_image_dict["background_intensity"][1]
     
     for n in range(N):
-        trajectory_to_videoTest(out_videos_no_noise[n,:],out_videos_gauss_noise[n,:],out_videos_Poisson[n,:],out_videos_RL[n,:],out_videos_gauss_filter[n,:],trajectories[n,:],nFrames,output_size,upsampling_factor,nPosPerFrame,
+        trajectory_to_videoTest(out_videos_no_noise[n,:],out_videos_gauss_noise[n,:],out_videos_Poisson[n,:],out_videos_gauss_filter[n,:],trajectories[n,:],nFrames,output_size,upsampling_factor,nPosPerFrame,
                                                 gaussian_sigma,particle_mean,particle_std,background_mean,background_std, poisson_noise,center)
         
-    return out_videos_no_noise,out_videos_gauss_noise, out_videos_Poisson, out_videos_RL, out_videos_gauss_filter
+    return out_videos_no_noise,out_videos_gauss_noise, out_videos_Poisson, out_videos_gauss_filter
 
 
-def trajectory_to_videoTest(out_video_no_noise,out_video_gauss_noise, out_video_poiss_noise, out_video_RL, out_video_gauss_filter,trajectory,nFrames, output_size, upsampling_factor, nPosPerFrame,gaussian_sigma,particle_mean,particle_std,background_mean,background_std, poisson_noise, center):
+def trajectory_to_videoTest(out_video_no_noise,out_video_gauss_noise, out_video_poiss_noise, out_video_gauss_filter,trajectory,nFrames, output_size, upsampling_factor, nPosPerFrame,gaussian_sigma,particle_mean,particle_std,background_mean,background_std, poisson_noise, center):
     """Helper function of function above, all arguments documented above"""
     for f in range(nFrames):
         frame_hr = np.zeros(( output_size*upsampling_factor, output_size*upsampling_factor),np.float32)
@@ -526,22 +525,134 @@ def trajectory_to_videoTest(out_video_no_noise,out_video_gauss_noise, out_video_
                                     0, background_mean + 3 * background_std)
 
         frame_lr_poisson = np.random.poisson(frame_lr * poisson_noise) / poisson_noise
-
-        # TO CHANGE !!
-        frame_RL = frame_lr
         frame_gaussian_filter = ski.filters.gaussian(frame_lr_poisson, sigma=0.5)  # mild smoothing
 
         out_video_no_noise[f,:] = frame_no_noise
         out_video_gauss_noise[f,:] = frame_lr
         out_video_poiss_noise[f,:] = frame_lr_poisson
-        out_video_RL[f,:] = frame_RL
         out_video_gauss_filter[f,:] = frame_gaussian_filter
 
     return 
 
+from scipy.signal import fftconvolve
+
+
+def tv_gradient(image):
+    """Compute the gradient of total variation."""
+    grad = np.zeros_like(image)
+    dx = np.diff(image, axis=1, append=image[:, -1:])
+    dy = np.diff(image, axis=0, append=image[-1:, :])
+    eps = 1e-8
+    mag = np.sqrt(dx**2 + dy**2 + eps)
+    dx_norm = dx / mag
+    dy_norm = dy / mag
+    grad[:, :-1] -= dx_norm[:, :-1]
+    grad[:, 1:] += dx_norm[:, :-1]
+    grad[:-1, :] -= dy_norm[:-1, :]
+    grad[1:, :] += dy_norm[:-1, :]
+    return grad
+
+def richardson_lucy_tv(image, psf, iterations=20, tv_weight=0.01):
+    image = np.clip(image, 1e-6, None)
+    psf_mirror = psf[::-1, ::-1]
+    estimate = np.full(image.shape, 0.5, dtype=np.float32)
+    for i in range(iterations):
+        relative_blur = image / (fftconvolve(estimate, psf, mode='same') + 1e-6)
+        correction = fftconvolve(relative_blur, psf_mirror, mode='same')
+        estimate *= correction
+        tv_grad = tv_gradient(estimate)
+        estimate -= tv_weight * tv_grad
+        estimate = np.clip(estimate, 0, 1)
+
+    return estimate
+
+def richardson_lucy_tv_iter_list(image, psf, iterations_list, out_array, tv_weight=0.01):
+    image = np.clip(image, 1e-6, None)
+    psf_mirror = psf[::-1, ::-1]
+    estimate = np.full(image.shape, 0.5, dtype=np.float32)
+    max_iterations = iterations_list[-1] +1
+    for i in range(max_iterations):
+        relative_blur = image / (fftconvolve(estimate, psf, mode='same') + 1e-6)
+        correction = fftconvolve(relative_blur, psf_mirror, mode='same')
+        estimate *= correction
+        tv_grad = tv_gradient(estimate)
+        estimate -= tv_weight * tv_grad
+        estimate = np.clip(estimate, 0, 1)
+
+        if(i in iterations_list):
+            index = iterations_list.index(i)
+            out_array[index] = estimate.copy()
+    return estimate
 
 
 
+def create_gaussian_psf(size=9, sigma=1.3):
+    if size % 2 == 0:
+        size += 1  # ensure odd size for symmetry
+    ax = np.arange(-size // 2 + 1, size // 2 + 1)
+    x, y = np.meshgrid(ax, ax)
+    psf = np.exp(-(x**2 + y**2) / (2 * sigma**2))
+    psf /= psf.sum()
+    return psf
+
+import torch
+import numpy as np
+
+def apply_rl_tv_tensor(tensor, psf, n_iters=10, tv_weight=0.01):
+    B, seq, H, W = tensor.shape
+    assert H == 9 and W == 9, "Only images of shape 9x9 are supported"
+    
+    tensor_np = tensor.detach().cpu().numpy()  # Convert to NumPy
+    result_np = np.empty_like(tensor_np)
+
+    for b in range(B):
+        for t in range(seq):
+            result_np[b, t] = richardson_lucy_tv(tensor_np[b, t], psf, iterations=n_iters, tv_weight=tv_weight)
+
+    return torch.tensor(result_np, dtype=tensor.dtype, device=tensor.device)
+
+def apply_rl_tv_tensor_iter_list(tensor, psf, iterations_list=[2,5,10], tv_weight=0.01):
+    B, seq, H, W = tensor.shape
+    assert H == 9 and W == 9, "Only images of shape 9x9 are supported"
+    
+   # Convert to NumPy if it's a tensor, otherwise use as-is if it's already a numpy array
+    tensor_np = tensor.detach().cpu().numpy() if torch.is_tensor(tensor) else tensor
+
+    n_iters = len(iterations_list)
+
+    result_np = np.empty((B, n_iters, seq, H, W), dtype=tensor_np.dtype)
+    for b in range(B):
+        for t in range(seq):
+            richardson_lucy_tv_iter_list(tensor_np[b, t], psf, iterations_list=iterations_list, out_array=result_np[b,:,t], tv_weight=tv_weight)
+
+    return result_np
+
+
+psf = create_gaussian_psf(sigma=1)
+
+
+def trajs_to_vid_norm_rl(trajectories,
+    nPosPerFrame,
+    center,
+    image_props, 
+    rl_iterations,
+    poisson_index = 2):
+    
+    bg_mean, bg_sigma = image_props["background_intensity"]
+    part_mean, part_sigma = image_props["particle_intensity"]
+
+    videos = trajectories_to_video_multiple_settings(trajectories, nPosPerFrame, center=center, image_props=image_props)
+    # videos is a tuple of 5 arrays of shape (N, length, P, P)
+    # Stack along a new axis to get shape (N, 4, length, P, P)
+    videos = np.stack(videos, axis=1)
+    # Normalize videos (handle batch of shape (N, 4, length, P, P))
+    videos, _ = normalize_images(videos, bg_mean, bg_sigma, part_mean + bg_mean)
+    # Take poisson noisy sequences
+    vids_to_rl = videos[:,poisson_index]
+    vids_with_rl = apply_rl_tv_tensor_iter_list(vids_to_rl,psf,rl_iterations)
+
+    combined_videos = np.concatenate([videos, vids_with_rl], axis=1)
+    return combined_videos
 
 
 

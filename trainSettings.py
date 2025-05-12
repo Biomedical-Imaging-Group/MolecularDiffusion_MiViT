@@ -9,13 +9,14 @@ center = True
 # adaptive batch size doubles the size of batch every adaptive_batch_size cycles
 # set to -1 if no adaptive batch_size 
 adaptive_batch_size = 20
-lr=1e-4
+lr = 1e-4
 D_max_normalization = 10
 
 
 if(sequences):
     # Models settings
     loss_function = nn.MSELoss()
+    val_loss_function = nn.MSELoss(reduction='none')
     single_prediction = False
     use_regression_token = False
     use_pos_encoding = True
@@ -23,6 +24,7 @@ if(sequences):
 else:
     # Models settings
     loss_function = nn.MSELoss()
+    val_loss_function = nn.MSELoss(reduction='none')
     single_prediction = True
     use_regression_token = True
     use_pos_encoding = True
@@ -48,12 +50,12 @@ nFrames = 30 # = Seuence length
 T = nFrames * nPosPerFrame
 # number of trajectories
 # values from Real data
-part_mean, part_std = 6200 - 1420,500
 background_mean,background_sigma = 1420, 290
+part_mean, part_std = 6000 - background_mean,500
 
 image_props = {
     "particle_intensity": [
-        part_mean - background_mean,
+        part_mean,
         part_std,
     ],  # Mean and standard deviation of the particle intensity
     "NA": 1.46,  # Numerical aperture
