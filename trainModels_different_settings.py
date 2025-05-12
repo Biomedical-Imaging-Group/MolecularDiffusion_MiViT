@@ -192,7 +192,6 @@ for cycle in range(num_cycles):
         for batch_images, batch_labels in dataloader:
             
             idx = images_idx_from_name(name)
-
             batch_images = batch_images[:,idx,:]
 
 
@@ -223,11 +222,10 @@ for cycle in range(num_cycles):
         with torch.no_grad():
             label_losses = []
             for vid, label_value in zip(val_videos, val_labels):
+
                 vid = vid.to(device)
-
                 idx = images_idx_from_name(name)
-
-                vid = vid[idx]
+                vid = vid[:,idx]
 
                 # Adjust label shape based on single_prediction
                 if not model.single_prediction:
