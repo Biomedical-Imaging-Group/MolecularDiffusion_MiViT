@@ -503,12 +503,14 @@ def trajectory_to_videoTest(out_video_no_noise,out_video_gauss_noise, out_video_
         xtraj = trajectory_segment[:,0]  * upsampling_factor
         ytraj = trajectory_segment[:,1] * upsampling_factor
 
+        frame_intensity = np.random.normal(particle_mean,particle_std)
         
 
         # Generate frame, convolution, resampling, noise
         for p in range(nPosPerFrame):
             if(particle_mean >0.0001 and particle_std > 0.0001):
-                spot_intensity = np.random.normal(particle_mean/nPosPerFrame,particle_std/nPosPerFrame)
+                #spot_intensity = np.random.normal(particle_mean/nPosPerFrame,particle_std/nPosPerFrame)
+                spot_intensity = frame_intensity/ nPosPerFrame
                 frame_spot = gaussian_2d(xtraj[p], ytraj[p], gaussian_sigma, output_size*upsampling_factor, spot_intensity)
 
                 # gaussian_2d maximum is not always the wanted one because of some misplaced pixels. 

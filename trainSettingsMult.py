@@ -64,7 +64,7 @@ T = nFrames * nPosPerFrame
 # number of trajectories
 # values from Real data
 background_mean,background_sigma = 1420, 290
-part_mean, part_std = 6000 - background_mean,500
+part_mean, part_std = 5400 - background_mean, 500
 
 image_props = {
     "particle_intensity": [
