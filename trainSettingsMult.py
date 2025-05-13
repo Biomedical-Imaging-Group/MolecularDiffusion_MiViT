@@ -4,15 +4,6 @@ from helpersGeneration import *
 import torch
 import torch.nn as nn
 
-class RelativeMSELoss(nn.Module):
-    def __init__(self, epsilon=1e-8):
-        super(RelativeMSELoss, self).__init__()
-        self.epsilon = epsilon
-
-    def forward(self, pred, target):
-        relative_error = (pred - target) / (target + self.epsilon)
-        return torch.mean(relative_error ** 2)
-
 
 
 # Define settings needed in the other files
@@ -36,8 +27,8 @@ if(sequences):
     tr_activation_fct = F.relu
 else:
     # Models settings
-    loss_function = RelativeMSELoss()
-    val_loss_function = nn.MSELoss(reduction='none')
+    loss_function = nn.L1Loss()
+    val_loss_function = nn.L1Loss(reduction='none')
     single_prediction = True
     use_regression_token = True
     use_pos_encoding = True

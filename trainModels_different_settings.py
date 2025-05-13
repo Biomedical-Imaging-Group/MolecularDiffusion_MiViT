@@ -49,7 +49,7 @@ for name in models:
     models[name] = models[name].to(device)
 
 ### Training Settings ###
-num_cycles = 100  # Number of dataset refreshes
+num_cycles = 10  # Number of dataset refreshes
 batch_size = 1 if adaptive_batch_size != -1 else 16 # Number of sequences in 1 batch
 shuffle = True # if trajectories should be shuffled during training
 N = 64 # Number of sequences in per value of D in Trainings_Ds
@@ -259,7 +259,7 @@ for cycle in range(num_cycles):
 
 print(f"Number of generated sequences: {all_gen_labels.shape}")
 # --- Save everything for later analysis ---
-save_path = "training_results.pth"
+save_path = "training_results_mult_Test.pth"
 results = {
     "validation_losses": validation_losses,
     "all_labels": all_gen_labels,  # Convert to NumPy for easier histogram plotting
