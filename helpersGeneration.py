@@ -656,153 +656,48 @@ def trajs_to_vid_norm_rl(trajectories,
     combined_videos = np.concatenate([videos, vids_with_rl], axis=1)
     return combined_videos
 
+from helpersFeatures import *
 
-
-
-
-# Helpers for plotting: 
-
-
-import numpy as np
-import matplotlib as plt
-import matplotlib.animation as animation
-import matplotlib.pyplot as plt
-from IPython.display import HTML, display
-import numpy as np
-
-
-
-def plot1ParticleTrajectory(trajectory, nframes, D):
+def create_video_and_feature_pairs(trajectories, 
+                                   nPosPerFrame, 
+                                   center,
+                                   image_props,
+                                   dt=1.0):
     """
-    Plots the trajectory of a particle, coloring each frame differently 
-    and labeling each frame with its number.
-    
-    Parameters:
-    - trajectory: np.ndarray of shape (N, 2), where N is the total number of points.
-                  Each row represents the (x, y) coordinates of the particle.
-    - nframes: int, number of frames to divide the trajectory into.
-    - D: float, diffusion coefficient for annotation.
+    Converts a list of trajectories into normalized videos and diffusion features.
+
+    Args:
+        trajectories: List or array of particle trajectories.
+        nPosPerFrame: Number of positions per video frame.
+        image_props: Dictionary of image properties for rendering.
+        background_mean, background_sigma, part_mean: Parameters for normalization.
+        dt: Time step for computing diffusion features.
+
+    Returns:
+        videos: List of normalized video arrays (one per trajectory), shape (num_traj, num_frames, H, W)
+        features: List of feature vectors (one per trajectory), shape (num_traj, num_features)
     """
-    plt.figure(figsize=(6, 6))
-    
-    # Calculate points per frame
-    points_per_frame = len(trajectory) // nframes
-    
-    # Plot trajectory segments with frame labels
-    for f in range(nframes):
-        start = f * points_per_frame
-        end = (f + 1) * points_per_frame + (1 if f != nframes - 1 else 0)
-        
-        # Plot each frame's trajectory in a different color
-        plt.plot(
-            trajectory[start:end, 0], 
-            -trajectory[start:end, 1], 
-            lw=1, 
-            label=f'Frame {f + 1}'  # Frames start from 1
-        )
-    
-    # Add legend and axis labels
-    plt.legend(loc="best", fontsize=8)
-    plt.title(f'Brownian Motion of 1 Particle with $D={D}$ (nm)$^2$/s on 4 Frames')
-    plt.xlabel('X Position (nm)', fontsize=14)  # Increased font size
-    plt.ylabel('Y Position (nm)', fontsize=14)  # Increased font size
-    plt.grid(True)
-    plt.axis('equal')  # Equal scaling for x and y axes
-        # Increase the tick label size
-    plt.tick_params(axis='both', which='major', labelsize=15)
-    plt.tick_params(axis='both', which='minor', labelsize=12)
-    # Show the plot
-    plt.tight_layout()
-    plt.show()
+    features = []
+
+    bg_mean, bg_sigma = image_props["background_intensity"]
+    part_mean, part_sigma = image_props["particle_intensity"]
+
+    # Generate and normalize video
+    videos = trajectories_to_video(trajectories, nPosPerFrame, center=center, image_props=image_props)
+    videos, _ = normalize_images(videos, bg_mean, bg_sigma, part_mean + bg_mean)
+
+    for traj in trajectories:
+        # === Average positions every nPosPerFrame ===
+        num_frames = len(traj) // nPosPerFrame
+        reshaped = traj[:num_frames * nPosPerFrame].reshape(num_frames, nPosPerFrame, -1)  # shape: [num_frames, nPosPerFrame, 2]
+        avg_traj = reshaped.mean(axis=1)  # shape: [num_frames, 2]
+
+        # Compute features on the averaged trajectory
+        feat = compute_diffusion_features(avg_traj, dt=dt)
+        features.append(feat)
 
 
-def show_plt(plt, title, xlabel='', ylabel='',legend=False):
-    """
-    A helper function to display plots with a uniform style and labeling.
+    # Stack into arrays
+    features = np.stack(features)
 
-    Parameters:
-    - plt (matplotlib.pyplot): The matplotlib.pyplot module, used for plotting.
-    - title (str): Title of the plot.
-    - xlabel (str, optional): Label for the x-axis.
-    - ylabel (str, optional): Label for the y-axis.
-
-    Displays:
-    - A styled plot with grid, labels, and title.
-    """
-    plt.title(title)
-    plt.xlabel(xlabel)
-    plt.ylabel(ylabel)
-    plt.grid(True)
-    plt.tight_layout()
-    if(legend):
-        plt.legend()  # Uncomment if there are multiple series to label
-    plt.show()
-
-
-def play_video(video, figsize=(5, 5), fps=5, vmin=None, vmax=None, save_path=None, no_borders=False):
-    """
-    Displays a stack of images as a video inside jupyter notebooks with consistent intensity scaling.
-
-    Parameters
-    ----------
-    video : ndarray
-        Stack of images.
-    figsize : tuple, optional
-        Canvas size of the video.
-    fps : int, optional
-        Video frame rate.
-    vmin : float, optional
-        Minimum intensity value for all frames. If None, will be automatically determined.
-    vmax : float, optional
-        Maximum intensity value for all frames. If None, will be automatically determined.
-
-    Returns
-    -------
-    Video object
-        Returns a video player with input stack of images.
-    """
-    fig = plt.figure(figsize=figsize)
-    images = []
-
-    if(len(video.shape) == 3):
-        video = np.expand_dims(video,axis=-1)
-
-    plt.axis("off")
-    if(no_borders):
-        # Adjust layout to remove borders
-        plt.subplots_adjust(left=0, right=1, top=1, bottom=0)
-    
-    # If vmin/vmax not provided, compute global min/max across all frames
-    if vmin is None:
-        vmin = np.min([frame[:, :, 0].min() for frame in video])
-    if vmax is None:
-        vmax = np.max([frame[:, :, 0].max() for frame in video])
-    mean = np.mean(video)
-
-    print(f"vmin: {vmin} vmax: {vmax} mean: {mean:.2f}")
-
-    for image in video:
-        images.append([plt.imshow(image[:, :, 0], cmap="gray", vmin=vmin, vmax=vmax)])
-
-    anim = animation.ArtistAnimation(
-        fig, images, interval=1e3 / fps, blit=True, repeat_delay=0
-    )
-
-    html = HTML(anim.to_jshtml())
-    display(html)
-
-    # Save the animation if a save path is provided
-    if save_path:
-        if save_path.endswith('.mp4'):
-            # Use FFMpegWriter for MP4 files (requires FFmpeg installed)
-            writer = animation.FFMpegWriter(fps=fps, metadata=dict(artist='Me'), bitrate=1800)
-            anim.save(save_path, writer=writer)
-            print(f"Animation saved to {save_path}")
-        elif save_path.endswith('.gif'):
-            # Use PillowWriter for GIF files
-            writer = animation.PillowWriter(fps=fps)
-            anim.save(save_path, writer=writer)
-            print(f"Animation saved to {save_path}")
-        else:
-            print("Unsupported file format. Use .mp4 or .gif extension.")
-    plt.close()
+    return videos, features

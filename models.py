@@ -257,60 +257,342 @@ class DeepResNetEmbedding(nn.Module):
         return self.fc(x)  # Final projection to embed_dim
     
 
-# --------------- General Transformer Class --------------- #
+class MLPHead(nn.Module):
+    def __init__(self, 
+                 input_dim,       # input dimension (e.g., embed_dim or 2*embed_dim)
+                 hidden_dim=128,  # size of the hidden layer
+                 output_dim=1,    # size of the output (default: scalar for regression)
+                 dropout=0.0,     # optional dropout
+                 activation=nn.ReLU):  # activation function (default: ReLU)
+        super().__init__()
+        self.mlp = nn.Sequential(
+            nn.Linear(input_dim, hidden_dim),
+            activation(),
+            nn.Dropout(dropout) if dropout > 0 else nn.Identity(),
+            nn.Linear(hidden_dim, output_dim)
+        )
+
+    def forward(self, x):
+        return self.mlp(x)
+
 class GeneralTransformer(nn.Module):
     def __init__(self, 
-                 embedding_cls,  # Class for embedding (e.g., LinearProjectionEmbedding)
-                 embed_kwargs,   # Arguments for embedding class
+                 embedding_cls,
+                 embed_kwargs,
                  embed_dim, 
                  num_heads, 
                  hidden_dim, 
                  num_layers, 
-                 mlp_head,       # MLP head module
+                 mlp_head,
                  tr_activation_fct,
                  dropout=0, 
                  use_pos_encoding=False,
                  use_regression_token=False,
-                 single_prediction=True):
+                 single_prediction=True,
+                 use_global_features=False,
+                 fusion_type='early',  # 'early' or 'late'
+                 global_feature_dim=None):
         """
-        Generic Transformer class allowing flexible embedding and head customization.
+        Generic Transformer class with optional fusion of global features.
         """
         super().__init__()
         self.embed_dim = embed_dim
-        self.embedding = embedding_cls(**embed_kwargs)  # Instantiate embedding
+        self.embedding = embedding_cls(**embed_kwargs)
         self.norm = nn.LayerNorm(embed_dim)
         self.use_regression_token = use_regression_token
         self.single_prediction = single_prediction
+        self.use_global_features = use_global_features
+        self.fusion_type = fusion_type
+
         if use_regression_token:
-            self.reg_token = nn.Parameter(torch.randn(1, 1, embed_dim))  # Learnable regression token
+            self.reg_token = nn.Parameter(torch.randn(1, 1, embed_dim))
 
         self.transformer = Transformer(embed_dim, num_heads, hidden_dim, num_layers, 
                                        dropout, use_pos_encoding=use_pos_encoding, activation_fct=tr_activation_fct)
-        self.mlp_head = mlp_head  # Pass any MLP head architecture
 
-    def forward(self, x):
-        x = self.embedding(x)  # Shape: [batch_size, num_images, embed_dim]
-        
+        # Optional MLP to project global features to embed_dim
+        if use_global_features:
+            assert global_feature_dim is not None, "Must provide global_feature_dim if using global features"
+            self.feature_projector = nn.Sequential(
+                nn.Linear(global_feature_dim, embed_dim),
+                nn.ReLU(),
+                nn.Linear(embed_dim, embed_dim)
+            )
+
+        # Output head
+        if fusion_type == 'late' and use_global_features:
+            self.mlp_head = mlp_head(input_dim=embed_dim * 2)  # concatenate token + features
+        else:
+            self.mlp_head = mlp_head(input_dim=embed_dim)
+
+    def forward(self, x, features=None):
+        """
+        x: [batch_size, num_images, image_size, image_size]
+        features: [batch_size, num_features] or None
+        """
+        x = self.embedding(x)  # [batch_size, num_images, embed_dim]
         x = self.norm(x)
 
-        if self.use_regression_token:
-            batch_size = x.shape[0]
-            reg_token = self.reg_token.expand(batch_size, -1, -1)  # [batch_size, 1, embed_dim]
-            x = torch.cat([reg_token, x], dim=1)  # [batch_size, num_images + 1, embed_dim]
-
-        x = self.transformer(x)
+        batch_size = x.shape[0]
 
         if self.use_regression_token:
-            reg_out = x[:, 0, :]  # Extract regression token
-            return self.mlp_head(reg_out)  # Output shape: [batch_size, 1]
+            reg_token = self.reg_token.expand(batch_size, 1, -1)  # [batch_size, 1, embed_dim]
+
+            if self.use_global_features and self.fusion_type == 'early':
+                assert features is not None, "Global features required for early fusion"
+                projected = self.feature_projector(features)  # [batch_size, embed_dim]
+                projected = projected.unsqueeze(1)  # [batch_size, 1, embed_dim]
+                reg_token = reg_token + projected  # inject info into CLS token
+
+            x = torch.cat([reg_token, x], dim=1)  # prepend CLS/regression token
+
+        x = self.transformer(x)  # [batch_size, seq_len, embed_dim]
+
+        if self.use_regression_token:
+            reg_out = x[:, 0, :]  # [batch_size, embed_dim]
         else:
-            if self.single_prediction:
-                # When no regression token is used, average the tokens across the sequence
-                avg_tokens = x.mean(dim=1)  # [batch_size, embed_dim], average over the sequence
-                return self.mlp_head(avg_tokens)  # Pass averaged output through MLP head
+            reg_out = x.mean(dim=1)  # fallback: average all tokens
+
+        if self.use_global_features and self.fusion_type == 'late':
+            assert features is not None, "Global features required for late fusion"
+            projected = self.feature_projector(features)  # [batch_size, embed_dim]
+            reg_out = torch.cat([reg_out, projected], dim=-1)  # [batch_size, embed_dim * 2]
+
+        return self.mlp_head(reg_out)
+
+
+
+
+class ModularTransformer(nn.Module):
+    def __init__(self,
+                 embed_dim,
+                 num_heads,
+                 hidden_dim,
+                 num_layers,
+                 mlp_head,
+                 tr_activation_fct,
+                 dropout=0,
+                 use_pos_encoding=False,
+                 use_regression_token=False,
+                 single_prediction=True,
+                 # New modular parameters
+                 mode='images_only',  # 'images_only', 'features_only', or 'both'
+                 image_embedding_cls=None,   # Image embedding class (optional)
+                 image_embed_kwargs=None,    # Image embedding arguments (optional)
+                 features_dim=None,          # Number of feature dimensions (optional)
+                 feature_embedding_type='linear',  # How to embed features: 'linear', 'mlp'
+                 fusion_method='add'         # Method to combine: 'add', 'concat_proj', 'concat_features'
+                ):
+        """
+        Modular Transformer that can process images, features, or both, optimized for PyTorch efficiency.
+        
+        Parameters:
+        -----------
+        embed_dim: Dimension of token embeddings in the transformer
+        num_heads: Number of attention heads
+        hidden_dim: Hidden dimension in feed forward network
+        num_layers: Number of transformer layers
+        mlp_head: MLP head module for final predictions
+        tr_activation_fct: Activation function for transformer
+        dropout: Dropout rate
+        use_pos_encoding: Whether to use positional encoding
+        use_regression_token: Whether to use a learnable regression token
+        single_prediction: If True, return a single prediction per sequence
+        mode: Input mode - 'images_only', 'features_only', or 'both'
+        image_embedding_cls: Class for image embedding
+        image_embed_kwargs: Arguments for image embedding class
+        features_dim: Dimension of input features
+        feature_embedding_type: How to embed features ('linear' or 'mlp')
+        fusion_method: Method to fuse image and feature embeddings:
+                      - 'add': Simple addition
+                      - 'concat_proj': Concatenate and project to embed_dim
+                      - 'concat_features': Keep raw features and concat with adjusted image embeddings
+        """
+        super().__init__()
+        self.embed_dim = embed_dim
+        self.mode = mode
+        self.use_regression_token = use_regression_token
+        self.single_prediction = single_prediction
+        self.fusion_method = fusion_method
+        self.features_dim = features_dim
+        
+        # Validate configuration
+        if mode not in ['images_only', 'features_only', 'both']:
+            raise ValueError("mode must be one of: 'images_only', 'features_only', 'both'")
+            
+        if mode == 'both' and fusion_method not in ['add', 'concat_proj', 'concat_features']:
+            raise ValueError("fusion_method must be one of: 'add', 'concat_proj', 'concat_features'")
+        
+        # Handle the special case of concat_features fusion method
+        if mode == 'both' and fusion_method == 'concat_features':
+            # For concat_features, we need to adjust the image embedding dimension
+            # so that when concatenated with raw features, it equals embed_dim
+            image_embed_dim = embed_dim - features_dim
+            
+            # Make sure it's valid
+            if image_embed_dim <= 0:
+                raise ValueError(f"embed_dim ({embed_dim}) must be greater than features_dim ({features_dim}) when using 'concat_features' fusion")
+                
+            # Update image_embed_kwargs to use the adjusted embed_dim
+            if image_embed_kwargs is None:
+                image_embed_kwargs = {}
+            image_embed_kwargs['embed_dim'] = image_embed_dim
+        else:
+            # For other modes, use the full embed_dim for image embedding
+            image_embed_dim = embed_dim
+        
+        # Set up image embedding if needed
+        self.image_embedding = None
+        if mode in ['images_only', 'both']:
+            if image_embedding_cls is None:
+                raise ValueError("image_embedding_cls must be provided when using images")
+            if image_embed_kwargs is None:
+                image_embed_kwargs = {}
+            self.image_embedding = image_embedding_cls(**image_embed_kwargs)
+        
+        # Set up feature embedding if needed
+        self.feature_embedding = None
+        if mode in ['features_only', 'both'] and fusion_method != 'concat_features':
+            if features_dim is None:
+                raise ValueError("features_dim must be provided when using features")
+                
+            if feature_embedding_type == 'linear':
+                self.feature_embedding = nn.Linear(features_dim, embed_dim)
+            elif feature_embedding_type == 'mlp':
+                self.feature_embedding = nn.Sequential(
+                    nn.Linear(features_dim, embed_dim * 2),
+                    nn.LayerNorm(embed_dim * 2),
+                    nn.GELU(),
+                    nn.Linear(embed_dim * 2, embed_dim)
+                )
             else:
-                # Predict one value per input image in the sequence
-                return self.mlp_head(x)  # Shape: [batch_size, num_images, 1]
+                raise ValueError(f"Unknown feature_embedding_type: {feature_embedding_type}")
+        
+        # Fusion layer if using both modalities with concatenative projection
+        self.fusion_layer = None
+        if mode == 'both' and fusion_method == 'concat_proj':
+            self.fusion_layer = nn.Linear(embed_dim * 2, embed_dim)
+        
+        # Layer normalization for embeddings
+        self.norm = nn.LayerNorm(embed_dim)
+        
+        # Regression token if needed
+        if use_regression_token:
+            self.reg_token = nn.Parameter(torch.randn(1, 1, embed_dim))
+            
+        # Transformer backbone
+        self.transformer = Transformer(
+            embed_dim, 
+            num_heads, 
+            hidden_dim, 
+            num_layers,
+            dropout, 
+            use_pos_encoding=use_pos_encoding, 
+            activation_fct=tr_activation_fct
+        )
+        
+        # Output head
+        self.mlp_head = mlp_head
+    
+    def forward(self, images=None, features=None):
+        """
+        Forward pass for the modular transformer using direct tensor inputs instead of dictionaries.
+        
+        Parameters:
+        -----------
+        images: tensor of shape [batch_size, num_images, image_size, image_size] or None
+                Required for 'images_only' and 'both' modes
+        features: tensor of shape [batch_size, num_images, features_dim] or None
+                  Required for 'features_only' and 'both' modes
+            
+        Returns:
+        --------
+        Tensor of predictions with shape depending on configuration:
+            - With use_regression_token=True: [batch_size, output_dim]
+            - With single_prediction=True: [batch_size, output_dim]
+            - Otherwise: [batch_size, num_images, output_dim]
+        """
+        # Input validation based on mode
+        if self.mode == 'images_only' and images is None:
+            raise ValueError("Images are required for 'images_only' mode")
+        if self.mode == 'features_only' and features is None:
+            raise ValueError("Features are required for 'features_only' mode")
+        if self.mode == 'both' and (images is None or features is None):
+            raise ValueError("Both images and features are required for 'both' mode")
+        
+        batch_size = None
+        
+        # Process inputs based on mode
+        if self.mode == 'images_only':
+            batch_size = images.shape[0]
+            x = self.image_embedding(images)
+            
+        elif self.mode == 'features_only':
+            batch_size = features.shape[0]
+            
+            # Replace NaNs with zeros
+            features = torch.nan_to_num(features, nan=0.0)
+            
+            x = self.feature_embedding(features)
+            
+        else:  # 'both' mode
+            batch_size = images.shape[0]
+            
+            # Validate that both inputs have the same batch size and sequence length
+            if (images.shape[0] != features.shape[0] or 
+                images.shape[1] != features.shape[1]):
+                raise ValueError("Images and features must have the same batch size and sequence length")
+            
+            # Replace NaNs in features with zeros
+            features = torch.nan_to_num(features, nan=0.0)
+            
+            # Get image embeddings
+            image_embeddings = self.image_embedding(images)
+            
+            # Fuse embeddings according to the selected method
+            if self.fusion_method == 'add':
+                # Project features to embed_dim and add to image embeddings
+                feature_embeddings = self.feature_embedding(features)
+                x = image_embeddings + feature_embeddings
+                
+            elif self.fusion_method == 'concat_proj':
+                # Project features to embed_dim, concat with image embeddings, then project back
+                feature_embeddings = self.feature_embedding(features)
+                concat_embeddings = torch.cat([image_embeddings, feature_embeddings], dim=-1)
+                x = self.fusion_layer(concat_embeddings)
+                
+            elif self.fusion_method == 'concat_features':
+                # Directly concatenate raw features with image embeddings
+                # (image_embeddings already have dim = embed_dim - features_dim)
+                x = torch.cat([image_embeddings, features], dim=-1)
+                # The resulting x now has dimension embed_dim
+        
+        # Apply layer normalization
+        x = self.norm(x)
+        
+        # Add regression token if needed
+        if self.use_regression_token:
+            reg_token = self.reg_token.expand(batch_size, -1, -1)  # [batch_size, 1, embed_dim]
+            x = torch.cat([reg_token, x], dim=1)  # [batch_size, sequence_length + 1, embed_dim]
+        
+        # Pass through transformer
+        x = self.transformer(x)
+        
+        # Extract appropriate tokens for prediction
+        if self.use_regression_token:
+            # Use the first token (regression token) for prediction
+            token_out = x[:, 0, :]  # [batch_size, embed_dim]
+        elif self.single_prediction:
+            # Average tokens across sequence dimension
+            token_out = x.mean(dim=1)  # [batch_size, embed_dim]
+        else:
+            # Use all tokens
+            token_out = x  # [batch_size, sequence_length, embed_dim]
+        
+        # Pass through MLP head
+        return self.mlp_head(token_out)
+        
+
 
 
 # --------------- ResNet Model --------------- #
@@ -435,6 +717,19 @@ class ImageDataset(Dataset):
 
     def __getitem__(self, idx):
         return self.images[idx], self.labels[idx]
+
+
+class ImageFeatureDataset(Dataset):
+    def __init__(self, images, features, labels):
+        self.images = images  # Shape (N, C, H, W)
+        self.features = features  # Shape (N, C, N_features)
+        self.labels = labels  # Shape (N, 1)
+
+    def __len__(self):
+        return len(self.images)
+
+    def __getitem__(self, idx):
+        return self.images[idx], self.features[idx], self.labels[idx]
 
 
 

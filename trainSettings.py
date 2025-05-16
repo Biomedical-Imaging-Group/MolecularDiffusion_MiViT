@@ -171,9 +171,6 @@ def load_validation_data(length = 20):
 
 
 
-
-
-
 # Define model instances
 
 def get_transformer_models(patch_size = patch_size, embed_dim = embed_dim, num_heads = num_heads, hidden_dim = hidden_dim, num_layers = num_layers,
@@ -185,15 +182,9 @@ def get_transformer_models(patch_size = patch_size, embed_dim = embed_dim, num_h
 
     embed_kwargs = {"patch_size": patch_size, "embed_dim": embed_dim}
     # Define MLP heads
-    twoLayerMLP = nn.Sequential(
-        nn.Linear(embed_dim, hidden_dim),
-        nn.ReLU(),
-        nn.Linear(hidden_dim, 1)  # Output a single scalar value
-    )
+    twoLayerMLP = MLPHead
 
-    oneLayerMLP = nn.Sequential(
-        nn.Linear(embed_dim, 1)  # Output a single scalar value
-    )
+
     # Define model instances
     models = {
         "linear_2layer" + name_suffix: GeneralTransformer(

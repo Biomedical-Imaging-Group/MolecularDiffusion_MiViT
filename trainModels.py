@@ -138,8 +138,7 @@ for cycle in range(num_cycles):
         # Store all labels
         all_labels.append(labels)
 
-        # Divide Labels by D_max to have values between 0 and 1 -> better optimizers
-        all_labels = all_labels / D_max_normalization
+        all_labels = all_labels 
 
 
         # Convert trajectories of D (pixels/s) to D (micro_m/ms)
