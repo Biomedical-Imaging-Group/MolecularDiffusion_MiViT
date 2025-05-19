@@ -42,6 +42,8 @@ num_layers = 6
 dropout = 0.0
 
 
+# feature generation parameters
+dt = 1
 # Image generation parameters
 traj_div_factor = 100 # need to divide trajectories because they are given in pixels/s but we want trajectories in ms domain
 
@@ -139,7 +141,7 @@ def getTrainingModels(lr=1e-4):
 
     features_reg = MLPHead(input_dim=N_features)
     models.update({"ft_mlp": features_reg})
-
+    
     # Create 1 optimizer and scheuler for each model
     optimizers = {name: optim.AdamW(model.parameters(), lr=lr) for name, model in models.items()}
     schedulers = {name: optim.lr_scheduler.StepLR(opt, step_size=5, gamma=0.9) for name, opt in optimizers.items()}
@@ -163,15 +165,43 @@ def load_validation_data(length = 20):
     trajs_in_order = np.load("./valTrajsInOrder.npy") /traj_div_factor
 
 
-    vid1, ft1 = create_video_and_feature_pairs(trajs1,nPosPerFrame,center=center,image_props=image_props)
-    vid3, ft3 = create_video_and_feature_pairs(trajs3,nPosPerFrame,center=center,image_props=image_props)
-    vid5, ft5 = create_video_and_feature_pairs(trajs5,nPosPerFrame,center=center,image_props=image_props)
-    vid7, ft7 = create_video_and_feature_pairs(trajs7,nPosPerFrame,center=center,image_props=image_props)
+    vid1, ft1 = create_video_and_feature_pairs(trajs1,nPosPerFrame,center=center,image_props=image_props, dt=dt)
+    vid3, ft3 = create_video_and_feature_pairs(trajs3,nPosPerFrame,center=center,image_props=image_props, dt=dt)
+    vid5, ft5 = create_video_and_feature_pairs(trajs5,nPosPerFrame,center=center,image_props=image_props, dt=dt)
+    vid7, ft7 = create_video_and_feature_pairs(trajs7,nPosPerFrame,center=center,image_props=image_props, dt=dt)
 
 
     trajs_in_order = trajs_in_order.reshape(-1,T,2)
-    vid_inorder, ft_inorder = create_video_and_feature_pairs(trajs_in_order,nPosPerFrame,center=center,image_props=image_props)
+    vid_inorder, ft_inorder = create_video_and_feature_pairs(trajs_in_order,nPosPerFrame,center=center,image_props=image_props, dt=dt)
     vid_inorder = vid_inorder.reshape(len(val_d_in_order),10,nFrames,patch_size,patch_size)
+    ft_inorder = ft_inorder.reshape(len(val_d_in_order),10,N_features)
 
     return (torch.Tensor(vid1),torch.Tensor(ft1)), (torch.Tensor(vid3),torch.Tensor(ft3)), (torch.Tensor(vid5),torch.Tensor(ft5)), (torch.Tensor(vid7),torch.Tensor(ft7)), (torch.Tensor(vid_inorder),torch.Tensor(ft_inorder))
 
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+
+def make_prediction(model, name, images, features):
+    images = images.to(device)
+    features = features.to(device)
+
+    predictions = None
+
+    if(name == "im_resnet"):
+        predictions = model(images)
+    elif(name == "ft_mlp"): 
+        predictions = model(features)
+    else:
+        if("ft" not in name):
+            features = None
+
+        predictions = model(images, features)
+    
+    return predictions
+
+
+def make_prediction_pair(model, name, pair):
+    images = pair[0]
+    features = pair[1]
+
+    return make_prediction(model, name, images, features)

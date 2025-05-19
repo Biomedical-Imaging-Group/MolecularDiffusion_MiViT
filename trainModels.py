@@ -43,8 +43,7 @@ verbose = False
 val_videos = load_validation_data(nFrames)  # Returns (vid1, vid3, vid5, vid7)
 val_labels = torch.tensor([1, 3, 5, 7], dtype=torch.float32)  # Corresponding labels
 
-# Divide Labels by D_max to have values between 0 and 1 -> better optimizers
-val_labels = val_labels / D_max_normalization
+val_labels = val_labels
 
 
 # Dictionary to store validation losses per model and dataset type
@@ -248,8 +247,10 @@ for cycle in range(num_cycles):
                     label = torch.full((batch_size, num_images, 1), label_value, device=device)  # Shape: [batch_size, num_images, 1]
                 else:
                     label = torch.full((vid.shape[0],), label_value, device=device).view(-1, 1)  # Shape: [batch_size, 1]
-                
-                val_predictions = model(vid)
+
+
+                # Multiply Labels by D_max to have values between 0 and 10 
+                val_predictions = model(vid) * D_max_normalization
                 val_loss = loss_function(val_predictions, label)
                 avg_val_loss = val_loss.item()
                 validation_losses[name][f"val_{label_value.item()}"].append(avg_val_loss)

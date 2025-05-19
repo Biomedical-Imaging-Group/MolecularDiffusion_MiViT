@@ -470,7 +470,7 @@ def compute_diffusion_features(trajectory, dt=1.0):
     
     # Ensure we have enough points
     if len(x) < 3:
-        return np.array([np.nan] * len(feature_names)), feature_names
+        return np.array([np.nan] * len(feature_names))
     
     # Compute basic metrics
     msd_values = msd(x, y)
@@ -521,7 +521,7 @@ def compute_diffusion_features(trajectory, dt=1.0):
     
 
 
-def compute_features_for_multiple_trajectories(trajectories, dt=1):
+def compute_features_for_multiple_trajectories(trajectories, dt=1, nPosPerFrame=1):
     """
     Compute features for multiple particle trajectories.
     
@@ -553,6 +553,12 @@ def compute_features_for_multiple_trajectories(trajectories, dt=1):
         
         # Compute features for this trajectory using the existing function
         # Assuming compute_trajectory_features is the original function
+
+        if(nPosPerFrame != 1):
+            num_images = len(trajectory) // nPosPerFrame
+            reshaped = trajectory[:,:num_images * nPosPerFrame].reshape(num_images, nPosPerFrame, -1)  # shape: [num_frames, nPosPerFrame, 2]
+            trajectory = reshaped.mean(axis=1)  # shape: [num_frames, 2]
+
         particle_features = compute_diffusion_features(trajectory, dt)
         # Replace any NaN values with 0
         particle_features = np.nan_to_num(particle_features, nan=0.0)

@@ -43,7 +43,7 @@ val_videosFeatures = load_validation_data(nFrames)  # Returns (vid1, vid3, vid5,
 val_labels = torch.tensor([1, 3, 5, 7], dtype=torch.float32)  # Corresponding labels
 
 # Divide Labels by D_max to have values between 0 and 1 -> better optimizers
-val_labels = val_labels / D_max_normalization
+val_labels = val_labels 
 
 
 # Dictionary to store validation losses per model and dataset type
@@ -221,7 +221,7 @@ for cycle in range(num_cycles):
 
             optimizer.zero_grad()
 
-            predictions = None
+            predictions = make_prediction(model, name, batch_images, batch_features)
 
             if(name == "im_resnet"):
                 predictions = model(batch_images)
@@ -255,11 +255,6 @@ for cycle in range(num_cycles):
             for vid, label_value in zip(val_videosFeatures, val_labels):
                 
                 val_images = vid[0]
-                val_features = vid[1]
-
-                val_images = val_images.to(device)
-                val_features = val_features.to(device)
-
 
                 # Adjust label shape based on single_prediction
                 if not single_prediction:
@@ -269,18 +264,10 @@ for cycle in range(num_cycles):
                     label = torch.full((val_images.shape[0],), label_value, device=device).view(-1, 1)  # Shape: [batch_size, 1]
                 
 
-                val_predictions = None
 
-                if(name == "im_resnet"):
-                    val_predictions = model(val_images)
-                elif(name == "ft_mlp"): 
-                    val_predictions = model(val_features)
-                else:
-                    if("ft" not in name):
-                        val_features = None
+                val_predictions = make_prediction_pair(model, name, vid)
 
-                    val_predictions = model(val_images, val_features)
-
+                val_predictions = val_predictions * D_max_normalization
 
                 val_loss = loss_function(val_predictions, label)
                 avg_val_loss = val_loss.item()
