@@ -45,7 +45,7 @@ def brownian_motion(nparticles, nframes, nposframe, D, dt, startAtZero=False):
     return trajectory
 
 
-def average_trajectory_frames(trajectories, nPosFrame):
+def average_trajectories_frames(trajectories, nPosFrame):
     """
     Average multiple position frames together to create a reduced trajectory.
     
@@ -658,10 +658,23 @@ def trajs_to_vid_norm_rl(trajectories,
 
 from helpersFeatures import *
 
+
+def average_trajs_add_error(trajectories, nPosPerFrame, localization_uncertainty):
+
+
+    trajs_averaged = average_trajectories_frames(trajectories, nPosFrame=nPosPerFrame)
+
+    loc_err_mean, loc_err_sigma = localization_uncertainty 
+    noise = np.random.normal(loc=loc_err_mean,scale=loc_err_sigma, size=trajs_averaged.shape)
+    trajs_averaged_loc_err = trajs_averaged + noise
+
+    return trajs_averaged, trajs_averaged_loc_err    
+
 def create_video_and_feature_pairs(trajectories, 
                                    nPosPerFrame, 
                                    center,
                                    image_props,
+                                   localization_uncertainty=(0,0),
                                    dt=1.0):
     """
     Converts a list of trajectories into normalized videos and diffusion features.
@@ -686,11 +699,14 @@ def create_video_and_feature_pairs(trajectories,
     videos = trajectories_to_video(trajectories, nPosPerFrame, center=center, image_props=image_props)
     videos, _ = normalize_images(videos, bg_mean, bg_sigma, part_mean + bg_mean)
 
-    for traj in trajectories:
+    trajs_averaged, trajs_averaged_loc_err = average_trajs_add_error(trajectories, nPosPerFrame, localization_uncertainty)
+
+    n_particles = trajectories.shape[0]
+
+    for traj_idx in range(n_particles):
         # === Average positions every nPosPerFrame ===
-        num_frames = len(traj) // nPosPerFrame
-        reshaped = traj[:num_frames * nPosPerFrame].reshape(num_frames, nPosPerFrame, -1)  # shape: [num_frames, nPosPerFrame, 2]
-        avg_traj = reshaped.mean(axis=1)  # shape: [num_frames, 2]
+        
+        avg_traj = trajs_averaged[traj_idx]
 
         # Compute features on the averaged trajectory
         feat = compute_diffusion_features(avg_traj, dt=dt)
@@ -700,4 +716,4 @@ def create_video_and_feature_pairs(trajectories,
     # Stack into arrays
     features = np.stack(features)
 
-    return videos, features
+    return videos, features, (trajectories, trajs_averaged, trajs_averaged_loc_err)

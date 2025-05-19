@@ -143,7 +143,7 @@ for cycle in range(num_cycles):
 
         # Convert trajectories of D (pixels/s) to D (micro_m/ms)
         trajs = trajs / traj_div_factor
-        videos, features = create_video_and_feature_pairs(trajs,nPosPerFrame,center=center,image_props=image_props)
+        videos, features, trajs_processed = create_video_and_feature_pairs(trajs,nPosPerFrame,center=center,image_props=image_props)
 
 
         all_videos.append(videos)
@@ -265,7 +265,7 @@ for cycle in range(num_cycles):
                 
 
 
-                val_predictions = make_prediction_pair(model, name, vid)
+                val_predictions = make_prediction_tuple(model, name, vid)
 
                 val_predictions = val_predictions * D_max_normalization
 

@@ -12,6 +12,11 @@ adaptive_batch_size = 20
 lr = 1e-4
 D_max_normalization = 10
 
+MSDModels = ["MSD_Perfect", "MSD_Frame", "MSD_Localized"]
+MSD_mult_factor = 250
+MSD_mult_factor_avg = 37.5
+
+localization_uncertainty = [0.0, 0.001]
 
 if(sequences):
     # Models settings
@@ -78,7 +83,7 @@ image_props = {
 
 
 # Change this function to 
-def getTrainingModels(lr=1e-4):
+def getTrainingModels(lr=1e-4, addMSDModels=False):
     # Get all transformer models, _s stands for small, _b for big models
     embed_kwargs = {"patch_size": patch_size, "embed_dim": embed_dim}
     # Define MLP heads
@@ -146,6 +151,11 @@ def getTrainingModels(lr=1e-4):
     optimizers = {name: optim.AdamW(model.parameters(), lr=lr) for name, model in models.items()}
     schedulers = {name: optim.lr_scheduler.StepLR(opt, step_size=5, gamma=0.9) for name, opt in optimizers.items()}
 
+
+
+    if(addMSDModels):
+        models.update({msd_mod: None for msd_mod in MSDModels})
+
     return models, optimizers, schedulers
 
 
@@ -165,43 +175,84 @@ def load_validation_data(length = 20):
     trajs_in_order = np.load("./valTrajsInOrder.npy") /traj_div_factor
 
 
-    vid1, ft1 = create_video_and_feature_pairs(trajs1,nPosPerFrame,center=center,image_props=image_props, dt=dt)
-    vid3, ft3 = create_video_and_feature_pairs(trajs3,nPosPerFrame,center=center,image_props=image_props, dt=dt)
-    vid5, ft5 = create_video_and_feature_pairs(trajs5,nPosPerFrame,center=center,image_props=image_props, dt=dt)
-    vid7, ft7 = create_video_and_feature_pairs(trajs7,nPosPerFrame,center=center,image_props=image_props, dt=dt)
+    vid1, ft1, trajs_1 = create_video_and_feature_pairs(trajs1,nPosPerFrame,center=center,image_props=image_props, localization_uncertainty=localization_uncertainty, dt=dt)
+    vid3, ft3, trajs_3 = create_video_and_feature_pairs(trajs3,nPosPerFrame,center=center,image_props=image_props, localization_uncertainty=localization_uncertainty, dt=dt)
+    vid5, ft5, trajs_5 = create_video_and_feature_pairs(trajs5,nPosPerFrame,center=center,image_props=image_props, localization_uncertainty=localization_uncertainty, dt=dt)
+    vid7, ft7, trajs_7 = create_video_and_feature_pairs(trajs7,nPosPerFrame,center=center,image_props=image_props, localization_uncertainty=localization_uncertainty, dt=dt)
 
 
     trajs_in_order = trajs_in_order.reshape(-1,T,2)
-    vid_inorder, ft_inorder = create_video_and_feature_pairs(trajs_in_order,nPosPerFrame,center=center,image_props=image_props, dt=dt)
+    vid_inorder, ft_inorder, trajs_inorder = create_video_and_feature_pairs(trajs_in_order,nPosPerFrame,center=center,image_props=image_props, localization_uncertainty=localization_uncertainty, dt=dt)
     vid_inorder = vid_inorder.reshape(len(val_d_in_order),10,nFrames,patch_size,patch_size)
     ft_inorder = ft_inorder.reshape(len(val_d_in_order),10,N_features)
 
-    return (torch.Tensor(vid1),torch.Tensor(ft1)), (torch.Tensor(vid3),torch.Tensor(ft3)), (torch.Tensor(vid5),torch.Tensor(ft5)), (torch.Tensor(vid7),torch.Tensor(ft7)), (torch.Tensor(vid_inorder),torch.Tensor(ft_inorder))
+    return (torch.Tensor(vid1),torch.Tensor(ft1), trajs_1), (torch.Tensor(vid3),torch.Tensor(ft3), trajs_3), (torch.Tensor(vid5),torch.Tensor(ft5), trajs_5), (torch.Tensor(vid7),torch.Tensor(ft7), trajs_7), (torch.Tensor(vid_inorder),torch.Tensor(ft_inorder), trajs_inorder)
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
-def make_prediction(model, name, images, features):
+import numpy as np
+
+def d_fromMSDTau1(trajectories):
+    """
+    Computes the MSD at lag tau=1 for multiple particle trajectories.
+
+    Parameters:
+    - trajectories (ndarray): shape (nparticles, num_steps, 2), positions over time.
+
+    Returns:
+    - msd_tau1 (ndarray): shape (nparticles,), MSD at tau=1 for each particle.
+    """
+    # Difference between consecutive steps: shape (nparticles, num_steps - 1, 2)
+    deltas = trajectories[:, 1:] - trajectories[:, :-1]
+
+    # Squared displacements: shape (nparticles, num_steps - 1)
+    squared_displacements = np.sum(deltas**2, axis=2)
+
+    # Average over time steps for each particle
+    msd_tau1 = np.mean(squared_displacements, axis=1)
+
+    return msd_tau1
+
+
+
+def make_prediction(model, name, images, features, trajectories, msd_mult_fact = MSD_mult_factor):
     images = images.to(device)
     features = features.to(device)
 
     predictions = None
 
-    if(name == "im_resnet"):
-        predictions = model(images)
-    elif(name == "ft_mlp"): 
-        predictions = model(features)
-    else:
-        if("ft" not in name):
-            features = None
+    if("MSD" not in name):
+        model.eval()
 
-        predictions = model(images, features)
+    if(name == "im_resnet"):
+        with torch.no_grad():
+            predictions = model(images)
+    elif(name == "ft_mlp"): 
+        with torch.no_grad():
+            predictions = model(features)
+    elif(name == "MSD_Perfect"):
+        predictions = d_fromMSDTau1(trajectories[0]) * msd_mult_fact
+    elif(name == "MSD_Frame"):
+        predictions = d_fromMSDTau1(trajectories[1]) * MSD_mult_factor_avg
+    elif(name == "MSD_Localized"):
+        predictions = d_fromMSDTau1(trajectories[2]) * MSD_mult_factor_avg
+    else:
+        with torch.no_grad():
+            if("ft" not in name):
+                features = None
+
+            predictions = model(images, features)
     
     return predictions
 
 
-def make_prediction_pair(model, name, pair):
-    images = pair[0]
-    features = pair[1]
 
-    return make_prediction(model, name, images, features)
+
+
+def make_prediction_tuple(model, name, tuple):
+    images = tuple[0]
+    features = tuple[1]
+    trajectories = tuple[2]
+
+    return make_prediction(model, name, images, features, trajectories)
