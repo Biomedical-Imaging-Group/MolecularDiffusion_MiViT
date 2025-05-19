@@ -683,7 +683,7 @@ class LightResNet(nn.Module):
         return out
 
 
-class MultiImageLightResNet(nn.Module):
+class MultiImageResNet(nn.Module):
     def __init__(self, image_size, num_classes=1, single_prediction=True, activation=nn.ReLU):
         super().__init__()
         self.single_prediction = single_prediction
@@ -699,6 +699,77 @@ class MultiImageLightResNet(nn.Module):
             x = torch.mean(x, dim=1, keepdim=False)
 
         return x
+
+
+class LightImagesFeaturesResNet(nn.Module):
+    def __init__(self, block, num_blocks, feature_size=64, activation=nn.ReLU):
+        super().__init__()
+        self.in_channels = 32
+        self.activation = activation
+
+        self.conv1 = nn.Conv2d(1, 32, kernel_size=5, stride=2, padding=2, bias=False)
+        self.bn1 = nn.BatchNorm2d(32)
+        self.act = activation(inplace=True)
+        self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
+
+        self.layer1 = self._make_layer(block, 32, num_blocks[0], stride=1)
+        self.layer2 = self._make_layer(block, 64, num_blocks[1], stride=2)
+        self.layer3 = self._make_layer(block, 128, num_blocks[2], stride=2)
+
+        self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
+        self.feature_size = feature_size
+        self.fc1 = nn.Linear(128 * block.expansion, self.feature_size)
+        self.fc_act = activation(inplace=True)
+
+    def _make_layer(self, block, out_channels, num_blocks, stride):
+        strides = [stride] + [1] * (num_blocks - 1)
+        layers = []
+        for stride in strides:
+            layers.append(block(self.in_channels, out_channels, stride, activation=self.activation))
+            self.in_channels = out_channels * block.expansion
+        return nn.Sequential(*layers)
+
+    def forward(self, x):
+        out = self.conv1(x)
+        out = self.bn1(out)
+        out = self.act(out)
+        out = self.maxpool(out)
+
+        out = self.layer1(out)
+        out = self.layer2(out)
+        out = self.layer3(out)
+
+        out = self.avgpool(out)
+        out = torch.flatten(out, 1)
+        out = self.fc1(out)
+        out = self.fc_act(out)
+
+        return out  # Now returns features, not predictions
+
+class MultiImageFeatureResNet(nn.Module):
+    def __init__(self, image_size, external_dim, feature_size=64, hidden_size=128, activation=nn.ReLU):
+        super().__init__()
+        self.resnet = LightImagesFeaturesResNet(BasicBlock, [1, 1, 1], feature_size, activation=activation)
+
+        self.feature_size = feature_size
+        self.external_dim = external_dim
+
+        self.mlp = nn.Sequential(
+            nn.Linear(feature_size + external_dim, hidden_size),
+            activation(inplace=True),
+            nn.Linear(hidden_size, 1)
+        )
+
+    def forward(self, x, external_features):
+        batch_size, num_images, height, width = x.shape
+        x = x.reshape(batch_size * num_images, 1, height, width)
+        features = self.resnet(x)
+        features = features.view(batch_size, num_images, -1)
+        features = torch.mean(features, dim=1)  # mean over time
+
+        combined = torch.cat([features, external_features], dim=1)
+        out = self.mlp(combined)
+        return out
 
 
 

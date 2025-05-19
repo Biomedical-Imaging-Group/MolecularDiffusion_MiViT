@@ -16,7 +16,7 @@ MSDModels = ["MSD_Perfect", "MSD_Frame", "MSD_Localized"]
 MSD_mult_factor = 250
 MSD_mult_factor_avg = 37.5
 
-localization_uncertainty = [0.0, 0.001]
+localization_uncertainty = [0.0, 0.01]
 
 if(sequences):
     # Models settings
@@ -141,8 +141,11 @@ def getTrainingModels(lr=1e-4, addMSDModels=False):
         ),
     }
     
-    resnet = MultiImageLightResNet(patch_size, single_prediction=single_prediction, activation=nn.ReLU)
+    resnet = MultiImageResNet(patch_size, single_prediction=single_prediction, activation=nn.ReLU)
     models.update({"im_resnet": resnet})
+
+    resnet_ft = MultiImageFeatureResNet(patch_size, N_features,feature_size=embed_dim, hidden_size=hidden_dim, activation=nn.ReLU)
+    models.update({"im_ft_resnet": resnet_ft})
 
     features_reg = MLPHead(input_dim=N_features)
     models.update({"ft_mlp": features_reg})
@@ -216,21 +219,21 @@ def d_fromMSDTau1(trajectories):
 
 
 
-def make_prediction(model, name, images, features, trajectories, msd_mult_fact = MSD_mult_factor):
+def make_prediction(model, name, images, features, trajectories, msd_mult_fact = MSD_mult_factor, eval=True):
     images = images.to(device)
     features = features.to(device)
 
     predictions = None
 
-    if("MSD" not in name):
+    if("MSD" not in name and eval):
         model.eval()
 
     if(name == "im_resnet"):
-        with torch.no_grad():
-            predictions = model(images)
+        predictions = model(images)
+    elif(name == "im_ft_resnet"):
+        predictions = model(images, features)
     elif(name == "ft_mlp"): 
-        with torch.no_grad():
-            predictions = model(features)
+        predictions = model(features)
     elif(name == "MSD_Perfect"):
         predictions = d_fromMSDTau1(trajectories[0]) * msd_mult_fact
     elif(name == "MSD_Frame"):

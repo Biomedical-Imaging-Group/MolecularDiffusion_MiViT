@@ -8,6 +8,15 @@ import datetime
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print("Using device:", device)
 
+def save_results(validation_losses, all_gen_labels, models,path_addition=""):
+    save_path = "training_results_testos"+path_addition+".pth"
+    results = {
+        "validation_losses": validation_losses,
+        "all_labels": all_gen_labels,  # Convert to NumPy for easier histogram plotting
+        "model_weights": {name: model.state_dict() for name, model in models.items()}
+    }
+    torch.save(results, save_path)
+    print(f"\nTraining results saved to {save_path}")
 
 
 
@@ -33,8 +42,6 @@ TrainingDs_list = [[1, 1], [3, 1], [5, 1], [7, 1]]
 
 printParams = True
 verbose = False
-
-
 
 
 
@@ -128,7 +135,6 @@ for cycle in range(num_cycles):
         all_gen_labels = np.append(all_gen_labels,labels[:, 0, 1])
 
 
-
         if single_prediction:
             labels = labels[:, 0, 1]
         else:
@@ -156,46 +162,6 @@ for cycle in range(num_cycles):
     # Divide Labels by D_max to have values between 0 and 1 -> better optimizers
     all_labels = all_labels / D_max_normalization
 
-    # Mix Trajectories
-    if mix_trajectories:
-        num_sequences_per_label = all_videos.shape[0] // len(TrainingDs_list)  # Number of sequences per label
-        quarter_sequences = num_sequences_per_label // 4  # N/4 sequences per label
-
-        # Define the mixing pairs (modularly specify which labels to mix)
-        start_index = 0
-
-        # Labels to mix between each other
-        # Currently for each label we have 2* 1/4 of sequecnes mixed and 1/2 normal 
-        mixing_pairs = [
-            (1, 7, start_index),  # Mix label 1 with label 7
-            (1, 5, start_index + quarter_sequences),  # Mix label 1 with label 5
-            (3, 7, start_index + quarter_sequences),  # Mix label 3 with label 7
-            (3, 5, start_index)   # Mix label 3 with label 5
-        ]
-
-        for label_a, label_b, start_idx in mixing_pairs:
-
-            label_a_start_idx = torch.where(val_labels == label_a)[0].item() *N + start_idx
-            label_b_start_idx = torch.where(val_labels == label_b)[0].item() *N + start_idx
-
-            for i in range(quarter_sequences):
-                # Randomly select the split index
-                split_index = np.random.randint(nFrames // 2 - 5, nFrames // 2 + 5)
-                idx_a = label_a_start_idx + i
-                idx_b = label_b_start_idx + i
-
-                # Mix the videos and labels using a temporary buffer
-                temp_videos = all_videos[idx_a, split_index:].copy()
-                all_videos[idx_a, split_index:] = all_videos[idx_b, split_index:].copy()
-                all_videos[idx_b, split_index:] = temp_videos
-
-                temp_labels = all_labels[idx_a, split_index:].copy()
-                all_labels[idx_a, split_index:] = all_labels[idx_b, split_index:].copy()
-                all_labels[idx_b, split_index:] = temp_labels
-
-                if(verbose):
-                    print(f"Mixing {idx_a} (label {label_a}) with {idx_b} (label {label_b}) at split index {split_index}")
-
 
     # Convert to tensors
     all_videos = torch.Tensor(all_videos)
@@ -221,7 +187,7 @@ for cycle in range(num_cycles):
 
             optimizer.zero_grad()
 
-            predictions = make_prediction(model, name, batch_images, batch_features)
+            predictions = make_prediction(model, name, batch_images, batch_features, None, eval=False)
 
             if(name == "im_resnet"):
                 predictions = model(batch_images)
@@ -265,7 +231,7 @@ for cycle in range(num_cycles):
                 
 
 
-                val_predictions = make_prediction_tuple(model, name, vid)
+                val_predictions = make_prediction_tuple(model, name, (vid[0],vid[1],None))
 
                 val_predictions = val_predictions * D_max_normalization
 
@@ -281,17 +247,16 @@ for cycle in range(num_cycles):
             if(verbose):
                 print(f"{name} on val_avg: Validation Loss = {avg_val_avg:.4f}")
 
+    
+    if (num_cycles - cycle -1< 5):
+        save_results(validation_losses, all_gen_labels, models, path_addition=str(num_cycles - cycle))
+
 
 
 
 print(f"Number of generated sequences: {all_gen_labels.shape}")
 # --- Save everything for later analysis ---
-save_path = "training_results.pth"
-results = {
-    "validation_losses": validation_losses,
-    "all_labels": all_gen_labels,  # Convert to NumPy for easier histogram plotting
-    "model_weights": {name: model.state_dict() for name, model in models.items()}
-}
-torch.save(results, save_path)
-print(f"\nTraining results saved to {save_path}")
+
+
+save_results(validation_losses, all_gen_labels, models)
 print(datetime.datetime.now())

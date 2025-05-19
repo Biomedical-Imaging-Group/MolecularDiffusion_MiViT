@@ -143,7 +143,7 @@ def getModels():
         optimizers[t_name(setting) ] = t_opt
         schedulers[t_name(setting) ] = t_sced
 
-        resnet = MultiImageLightResNet(patch_size, single_prediction=single_prediction, activation=nn.ReLU)
+        resnet = MultiImageResNet(patch_size, single_prediction=single_prediction, activation=nn.ReLU)
         r_opt = optim.AdamW(resnet.parameters(), lr=lr)
         r_sced = optim.lr_scheduler.StepLR(r_opt, step_size=5, gamma=0.9)
         models[r_name(setting)] = resnet

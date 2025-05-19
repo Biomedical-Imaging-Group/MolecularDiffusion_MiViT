@@ -120,7 +120,7 @@ def getTrainingModels(lr=1e-4, try_leaky_relu=False):
     models.update({"deep_cnn_b": deep_cnn_big})
 
     """
-    resnet = MultiImageLightResNet(patch_size, single_prediction=single_prediction, activation=nn.ReLU)
+    resnet = MultiImageResNet(patch_size, single_prediction=single_prediction, activation=nn.ReLU)
     models.update({"resnet": resnet})
 
     # Create 1 optimizer and scheuler for each model
