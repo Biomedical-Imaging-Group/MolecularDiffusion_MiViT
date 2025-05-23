@@ -162,10 +162,10 @@ def getTrainingModels(lr=1e-4, addMSDModels=False):
     return models, optimizers, schedulers
 
 
-val_d_in_order = np.arange(0.1,7.01,0.1)
+val_d_in_order = np.arange(0.1,10.01,0.1)
 N_in_order = 10 # number of particles
 
-def load_validation_data(length = 20):
+def load_validation_data(length = 20, skip_inorder=False):
 
     length_values = [20,30]
     if( length not in length_values):
@@ -175,21 +175,29 @@ def load_validation_data(length = 20):
     trajs3 = np.load("./valTrajs"+str(length)+"/val3.npy") /traj_div_factor
     trajs5 = np.load("./valTrajs"+str(length)+"/val5.npy") /traj_div_factor
     trajs7 = np.load("./valTrajs"+str(length)+"/val7.npy") /traj_div_factor
-    trajs_in_order = np.load("./valTrajsInOrder.npy") /traj_div_factor
+    trajs9 = np.load("./valTrajs"+str(length)+"/val9.npy") /traj_div_factor
+
+    trajs_in_order = np.load("./valTrajsInOrderImFt.npy") /traj_div_factor
 
 
     vid1, ft1, trajs_1 = create_video_and_feature_pairs(trajs1,nPosPerFrame,center=center,image_props=image_props, localization_uncertainty=localization_uncertainty, dt=dt)
     vid3, ft3, trajs_3 = create_video_and_feature_pairs(trajs3,nPosPerFrame,center=center,image_props=image_props, localization_uncertainty=localization_uncertainty, dt=dt)
     vid5, ft5, trajs_5 = create_video_and_feature_pairs(trajs5,nPosPerFrame,center=center,image_props=image_props, localization_uncertainty=localization_uncertainty, dt=dt)
     vid7, ft7, trajs_7 = create_video_and_feature_pairs(trajs7,nPosPerFrame,center=center,image_props=image_props, localization_uncertainty=localization_uncertainty, dt=dt)
+    vid9, ft9, trajs_9 = create_video_and_feature_pairs(trajs9,nPosPerFrame,center=center,image_props=image_props, localization_uncertainty=localization_uncertainty, dt=dt)
 
+    if(skip_inorder):
+        vid_inorder = np.zeros(1)
+        ft_inorder = np.zeros(1)
+        trajs_inorder = np.zeros(1)
 
-    trajs_in_order = trajs_in_order.reshape(-1,T,2)
-    vid_inorder, ft_inorder, trajs_inorder = create_video_and_feature_pairs(trajs_in_order,nPosPerFrame,center=center,image_props=image_props, localization_uncertainty=localization_uncertainty, dt=dt)
-    vid_inorder = vid_inorder.reshape(len(val_d_in_order),10,nFrames,patch_size,patch_size)
-    ft_inorder = ft_inorder.reshape(len(val_d_in_order),10,N_features)
+    else:
+        trajs_in_order = trajs_in_order.reshape(-1,T,2)
+        vid_inorder, ft_inorder, trajs_inorder = create_video_and_feature_pairs(trajs_in_order,nPosPerFrame,center=center,image_props=image_props, localization_uncertainty=localization_uncertainty, dt=dt)
+        vid_inorder = vid_inorder.reshape(len(val_d_in_order),10,nFrames,patch_size,patch_size)
+        ft_inorder = ft_inorder.reshape(len(val_d_in_order),10,N_features)
 
-    return (torch.Tensor(vid1),torch.Tensor(ft1), trajs_1), (torch.Tensor(vid3),torch.Tensor(ft3), trajs_3), (torch.Tensor(vid5),torch.Tensor(ft5), trajs_5), (torch.Tensor(vid7),torch.Tensor(ft7), trajs_7), (torch.Tensor(vid_inorder),torch.Tensor(ft_inorder), trajs_inorder)
+    return (torch.Tensor(vid1),torch.Tensor(ft1), trajs_1), (torch.Tensor(vid3),torch.Tensor(ft3), trajs_3), (torch.Tensor(vid5),torch.Tensor(ft5), trajs_5), (torch.Tensor(vid7),torch.Tensor(ft7), trajs_7),(torch.Tensor(vid9),torch.Tensor(ft9), trajs_9), (torch.Tensor(vid_inorder),torch.Tensor(ft_inorder), trajs_inorder)
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -218,6 +226,53 @@ def d_fromMSDTau1(trajectories):
     return msd_tau1
 
 
+def generate_rotated_sequences(x):
+    """
+    Given a tensor of shape (B, T, H, W), return a tuple of 4 tensors:
+    - Original
+    - Rotated 90°
+    - Rotated 180°
+    - Rotated 270°
+    """
+    if x.ndim != 4:
+        raise ValueError(f"Expected tensor of shape (B, T, H, W), got {x.shape}")
+    
+    original = x
+    rot90   = torch.rot90(x, k=1, dims=(2, 3))
+    rot180  = torch.rot90(x, k=2, dims=(2, 3))
+    rot270  = torch.rot90(x, k=3, dims=(2, 3))
+
+    return (original, rot90, rot180, rot270)
+
+
+def predict_with_rotations(model, images, features=None):
+    """
+    Apply model to images and their 90°, 180°, and 270° rotations.
+    Return the mean prediction over the 4 versions.
+    
+    Args:
+        model: a model that takes input of shape (B, T, H, W)
+        images: tensor of shape (B, T, H, W)
+    
+    Returns:
+        Tensor of shape (B, 1): averaged predictions
+    """
+    # Generate all rotations
+    rotations = generate_rotated_sequences(images)  # tuple of 4 tensors
+
+    # Get predictions for each rotated sequence
+    if(features != None):
+        preds = [model(rot, features) for rot in rotations]  # each (B, 1)
+    else:
+        preds = [model(rot) for rot in rotations]  # each (B, 1)
+
+
+    # Stack predictions along new dimension and average
+    stacked = torch.stack(preds, dim=0)  # shape (4, B, 1)
+    mean_pred = stacked.mean(dim=0)      # shape (B, 1)
+
+    return mean_pred
+
 
 def make_prediction(model, name, images, features, trajectories, msd_mult_fact = MSD_mult_factor, eval=True):
     images = images.to(device)
@@ -229,9 +284,15 @@ def make_prediction(model, name, images, features, trajectories, msd_mult_fact =
         model.eval()
 
     if(name == "im_resnet"):
-        predictions = model(images)
+        if("rot" in name):
+            predictions = predict_with_rotations(model,images)
+        else :
+            predictions = model(images)
     elif(name == "im_ft_resnet"):
-        predictions = model(images, features)
+        if("rot" in name):
+            predictions = predict_with_rotations(model,images, features)
+        else :
+            predictions = model(images, features)
     elif(name == "ft_mlp"): 
         predictions = model(features)
     elif(name == "MSD_Perfect"):
@@ -245,7 +306,11 @@ def make_prediction(model, name, images, features, trajectories, msd_mult_fact =
             if("ft" not in name):
                 features = None
 
-            predictions = model(images, features)
+            if("rot" in name):
+                predictions = predict_with_rotations(model,images, features)
+            else :
+                predictions = model(images, features)
+
     
     return predictions
 

@@ -9,7 +9,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print("Using device:", device)
 
 def save_results(validation_losses, all_gen_labels, models,path_addition=""):
-    save_path = "training_results_testos"+path_addition+".pth"
+    save_path = "training_results_ten"+path_addition+".pth"
     results = {
         "validation_losses": validation_losses,
         "all_labels": all_gen_labels,  # Convert to NumPy for easier histogram plotting
@@ -38,7 +38,7 @@ shuffle = True # if trajectories should be shuffled during training
 N = 64 # Number of sequences in per value of D in Trainings_Ds
 # Mean and variance of the trajectories of Ds
 #TrainingDs_list = [[1, 1], [3, 1], [5, 1], [7, 1]]
-TrainingDs_list = [[1, 1], [3, 1], [5, 1], [7, 1]]
+TrainingDs_list = [[1, 1], [3, 1], [5, 1], [7, 1], [9, 1]]
 
 printParams = True
 verbose = False
@@ -46,8 +46,8 @@ verbose = False
 
 
 # Load validation dataset (fixed, does not change across cycles)
-val_videosFeatures = load_validation_data(nFrames)  # Returns (vid1, vid3, vid5, vid7)
-val_labels = torch.tensor([1, 3, 5, 7], dtype=torch.float32)  # Corresponding labels
+val_videosFeatures = load_validation_data(nFrames, skip_inorder=True)  # Returns (vid1, vid3, vid5, vid7)
+val_labels = torch.tensor([1, 3, 5, 7, 9], dtype=torch.float32)  # Corresponding labels
 
 # Divide Labels by D_max to have values between 0 and 1 -> better optimizers
 val_labels = val_labels 
