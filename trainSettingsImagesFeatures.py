@@ -12,7 +12,9 @@ adaptive_batch_size = 20
 lr = 1e-4
 D_max_normalization = 10
 
-MSDModels = ["MSD_Perfect", "MSD_Frame", "MSD_Localized"]
+
+msdPerfect, msdFrame, msdLocalized = ("MSD_Perfect", "MSD_Frame", "MSD_Localized")
+MSDModels = [msdPerfect, msdFrame, msdLocalized]
 MSD_mult_factor = 250
 MSD_mult_factor_avg = 37.5
 
@@ -82,6 +84,10 @@ image_props = {
 
 
 
+im_resnet, im_ft_resnet = "im_resnet", "im_ft_resnet"
+ft_mlp = "ft_mlp"
+im_tr, im_ft_early_tr, im_ft_late_tr = "im_tr", "im_ft_early_tr", "im_ft_late_tr"
+
 # Change this function to 
 def getTrainingModels(lr=1e-4, addMSDModels=False):
     # Get all transformer models, _s stands for small, _b for big models
@@ -91,7 +97,7 @@ def getTrainingModels(lr=1e-4, addMSDModels=False):
 
     # Define model instances
     models = {
-        "im_tr": GeneralTransformer(
+        im_tr: GeneralTransformer(
             embedding_cls=DeepResNetEmbedding,
             embed_kwargs=embed_kwargs,
             embed_dim=embed_dim,
@@ -105,7 +111,7 @@ def getTrainingModels(lr=1e-4, addMSDModels=False):
             use_regression_token=use_regression_token,
             single_prediction=single_prediction
         ),
-        "im_ft_late_tr": GeneralTransformer(
+        im_ft_late_tr: GeneralTransformer(
             embedding_cls=DeepResNetEmbedding,
             embed_kwargs=embed_kwargs,
             embed_dim=embed_dim,
@@ -122,7 +128,7 @@ def getTrainingModels(lr=1e-4, addMSDModels=False):
             fusion_type='late',
             global_feature_dim=N_features
         ),
-        "im_ft_early_tr": GeneralTransformer(
+        im_ft_early_tr: GeneralTransformer(
             embedding_cls=DeepResNetEmbedding,
             embed_kwargs=embed_kwargs,
             embed_dim=embed_dim,
@@ -142,13 +148,13 @@ def getTrainingModels(lr=1e-4, addMSDModels=False):
     }
     
     resnet = MultiImageResNet(patch_size, single_prediction=single_prediction, activation=nn.ReLU)
-    models.update({"im_resnet": resnet})
+    models.update({im_resnet: resnet})
 
     resnet_ft = MultiImageFeatureResNet(patch_size, N_features,feature_size=embed_dim, hidden_size=hidden_dim, activation=nn.ReLU)
-    models.update({"im_ft_resnet": resnet_ft})
+    models.update({im_ft_resnet: resnet_ft})
 
     features_reg = MLPHead(input_dim=N_features)
-    models.update({"ft_mlp": features_reg})
+    models.update({ft_mlp: features_reg})
     
     # Create 1 optimizer and scheuler for each model
     optimizers = {name: optim.AdamW(model.parameters(), lr=lr) for name, model in models.items()}
