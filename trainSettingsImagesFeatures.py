@@ -88,6 +88,19 @@ im_resnet, im_ft_resnet = "im_resnet", "im_ft_resnet"
 ft_mlp = "ft_mlp"
 im_tr, im_ft_early_tr, im_ft_late_tr = "im_tr", "im_ft_early_tr", "im_ft_late_tr"
 
+
+name_map = {
+    msdLocalized: "MSD Localized",
+    msdFrame: "MSD Frame",
+    msdPerfect: "MSD Perfect",
+    im_resnet: "CNN only",
+    im_ft_resnet : "CNN + Feat",
+    ft_mlp : "Feat only",
+    im_tr: "Transf(CNN)",
+    im_ft_early_tr: "Transf(CNN + Feat)",
+    im_ft_late_tr: "Transfo(CNN) + Feat"
+}
+
 # Change this function to 
 def getTrainingModels(lr=1e-4, addMSDModels=False):
     # Get all transformer models, _s stands for small, _b for big models
