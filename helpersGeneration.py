@@ -630,7 +630,6 @@ def apply_rl_tv_tensor_iter_list(tensor, psf, iterations_list=[2,5,10], tv_weigh
     return result_np
 
 
-psf = create_gaussian_psf(sigma=1)
 
 
 def trajs_to_vid_norm_rl(trajectories,
@@ -642,6 +641,8 @@ def trajs_to_vid_norm_rl(trajectories,
     
     bg_mean, bg_sigma = image_props["background_intensity"]
     part_mean, part_sigma = image_props["particle_intensity"]
+
+    psf = create_gaussian_psf(sigma=1)      
 
     videos = trajectories_to_video_multiple_settings(trajectories, nPosPerFrame, center=center, image_props=image_props)
     # videos is a tuple of 5 arrays of shape (N, length, P, P)
