@@ -113,11 +113,8 @@ N_in_order = 10 # number of particles
 
 embed_kwargs = {"patch_size": patch_size, "embed_dim": embed_dim}
 # Define MLP heads
-twoLayerMLP = nn.Sequential(
-    nn.Linear(embed_dim, hidden_dim),
-    nn.ReLU(),
-    nn.Linear(hidden_dim, 1)  # Output a single scalar value
-)
+twoLayerMLP = MLPHead
+
 def getModels():
     models, optimizers, schedulers = {}, {}, {}
 
