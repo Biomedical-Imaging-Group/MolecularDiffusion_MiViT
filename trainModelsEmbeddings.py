@@ -9,6 +9,15 @@ import datetime
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print("Using device:", device)
 
+def save_results(validation_losses, all_gen_labels, models,path_addition=""):
+    save_path = "training_results_embed"+path_addition+".pth"
+    results = {
+        "validation_losses": validation_losses,
+        "all_labels": all_gen_labels,  # Convert to NumPy for easier histogram plotting
+        "model_weights": {name: model.state_dict() for name, model in models.items()}
+    }
+    torch.save(results, save_path)
+    print(f"\nTraining results saved to {save_path}")
 
 
 
@@ -20,8 +29,8 @@ models, optimizers, schedulers = getTrainingModels()
 
 for name in models:
     models[name] = models[name].to(device)
-    print(name)
-    print(sum(p.numel() for p in models[name].parameters() if p.requires_grad))
+    model = models[name]
+    print(name,sum(p.numel() for p in model.parameters() if p.requires_grad))
 
 
 ### Training Settings ###
@@ -33,7 +42,7 @@ shuffle = True # if trajectories should be shuffled during training
 N = 64 # Number of sequences in per value of D in Trainings_Ds
 # Mean and variance of the trajectories of Ds
 #TrainingDs_list = [[1, 1], [3, 1], [5, 1], [7, 1]]
-TrainingDs_list = [[1, 1], [3, 1], [5, 1], [7, 1], [9,1], [10, 0.5]]
+TrainingDs_list = [[1, 1], [3, 1], [5, 1], [7, 1], [9,1], [10.2,1]]
 
 printParams = True
 verbose = False
@@ -117,7 +126,7 @@ for cycle in range(num_cycles):
 
     for TrainingDs in TrainingDs_list:
         # Generate a new batch of 2000 images and labels
-        trajs, labels = models_phenom().single_state(N, 
+        trajs, labels = models_phenom().single_state(N if TrainingDs[0] != 10.2 else N//2, 
                                     L=0,
                                     T=T,
                                     Ds=TrainingDs,  # Mean and variance
@@ -228,17 +237,10 @@ for cycle in range(num_cycles):
             if(verbose):
                 print(f"{name} on val_avg: Validation Loss = {avg_val_avg:.4f}")
 
+    if (num_cycles - cycle -1< 5):
+        save_results(validation_losses, all_gen_labels, models, path_addition=str(num_cycles - cycle))
 
 
+save_results(validation_losses, all_gen_labels, models)
 
-print(f"Number of generated sequences: {all_gen_labels.shape}")
-# --- Save everything for later analysis ---
-save_path = "training_resultsEmbed.pth"
-results = {
-    "validation_losses": validation_losses,
-    "all_labels": all_gen_labels,  # Convert to NumPy for easier histogram plotting
-    "model_weights": {name: model.state_dict() for name, model in models.items()}
-}
-torch.save(results, save_path)
-print(f"\nTraining results saved to {save_path}")
 print(datetime.datetime.now())

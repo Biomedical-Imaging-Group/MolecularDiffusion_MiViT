@@ -39,7 +39,7 @@ shuffle = True # if trajectories should be shuffled during training
 N = 64 # Number of sequences in per value of D in Trainings_Ds
 # Mean and variance of the trajectories of Ds
 #TrainingDs_list = [[1, 1], [3, 1], [5, 1], [7, 1]]
-TrainingDs_list = [[1, 1], [3, 1], [5, 1], [7, 1], [9, 1]]
+TrainingDs_list = [[1, 1], [3, 1], [5, 1], [7, 1], [9,1], [10.2,1]]
 
 printParams = True
 verbose = False
@@ -122,7 +122,7 @@ for cycle in range(num_cycles):
 
     for TrainingDs in TrainingDs_list:
         # Generate a new batch of 2000 images and labels
-        trajs, labels = models_phenom().single_state(N, 
+        trajs, labels = models_phenom().single_state(N if TrainingDs[0] != 10.2 else N//2,  
                                     L=0,
                                     T=T,
                                     Ds=TrainingDs,  # Mean and variance
@@ -216,7 +216,8 @@ for cycle in range(num_cycles):
                     label = torch.full((val_images.shape[0],), label_value, device=device).view(-1, 1)  # Shape: [batch_size, 1]
                 
 
-
+                vid = vid.to(device)
+                label = label.to(device)
                 val_predictions = make_prediction(model, name, vid, True)
 
                 val_predictions = val_predictions * D_max_normalization
