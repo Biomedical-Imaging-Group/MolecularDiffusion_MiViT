@@ -152,7 +152,7 @@ def load_validation_data(length = 20, skip_inorder=False):
     else:
         trajs_in_order = trajs_in_order.reshape(-1,T,2)
         vid_inorder = trajs_to_vid_psf_noise(trajs_in_order,nPosPerFrame,center=center,image_props=image_props, PSF_Settings=PSF_Settings, Noise_Settings=Noise_Settings)
-        vid_inorder = vid_inorder.reshape(len(val_d_in_order),10,nFrames,patch_size,patch_size)
+        vid_inorder = vid_inorder.reshape(len(val_d_in_order),N_in_order,N_PSF,N_Noise,nFrames,patch_size,patch_size)
 
     return (torch.Tensor(vid1)), (torch.Tensor(vid3)),(torch.Tensor(vid5)),(torch.Tensor(vid7)),(torch.Tensor(vid9)),(torch.Tensor(vid_inorder))
 
@@ -169,21 +169,22 @@ def make_prediction(model, name, images, eval=True):
     return predictions
 
 
-def select_models_from_psf(models, wanted_psf_index):
+def select_models_from_psf(models, wanted_psf_index, wanted_prefix=None):
     selected_models = []
-    for model_name in models:
+    for model_name in models.keys():
         prefix, model_psf_index, noise = model_name.split("_")
-        if(model_psf_index == wanted_psf_index):
-            selected_models.append(model_name)
-
+        if(int(model_psf_index) == wanted_psf_index):
+            if(wanted_prefix == None or prefix==wanted_prefix):
+                selected_models.append(model_name)
     return selected_models
 
-def select_models_from_noise(models, wanted_noise_index):
+def select_models_from_noise(models, wanted_noise_index, wanted_prefix=None):
     selected_models = []
-    for model_name in models:
+    for model_name in models.keys():
         prefix, model_psf_index, model_noise_index = model_name.split("_")
-        if(model_noise_index == wanted_noise_index):
-            selected_models.append(model_name)
+        if(int(model_noise_index) == wanted_noise_index):
+            if(wanted_prefix == None or prefix==wanted_prefix):
+                selected_models.append(model_name)
 
     return selected_models
 
