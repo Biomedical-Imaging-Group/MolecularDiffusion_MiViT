@@ -98,7 +98,11 @@ name_map = {
     ft_mlp : "Feat only",
     im_tr: "Transf(CNN)",
     im_ft_early_tr: "Transf(CNN + Feat)",
-    im_ft_late_tr: "Transfo(CNN) + Feat"
+    im_ft_late_tr: "Transfo(CNN) + Feat",
+    "im_tr_rot" : "Transf(CNN) Aug",
+    "im_res_rot": "CNN only Aug",
+    "im_ft_res_rot": "CNN + Feat Aug",
+    "im_ft_tr_rot" : "Transf(CNN + Feat) Aug"
 }
 
 # Change this function to 
