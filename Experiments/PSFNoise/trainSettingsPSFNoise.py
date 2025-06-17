@@ -1,6 +1,6 @@
 from models import *
-from helpersGeneration import *
-from helpersFeatures import *
+from helpers.helpersGeneration import *
+from helpers.helpersFeatures import *
 
 # Define settings needed in the other files
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

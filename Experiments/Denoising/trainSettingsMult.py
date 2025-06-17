@@ -1,5 +1,5 @@
 from models import *
-from helpersGeneration import *
+from helpers.helpersGeneration import *
 
 import torch
 import torch.nn as nn

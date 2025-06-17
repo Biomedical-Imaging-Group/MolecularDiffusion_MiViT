@@ -1,6 +1,6 @@
 from models import *
 from andi_datasets.models_phenom import models_phenom
-from helpersGeneration import *
+from helpers.helpersGeneration import *
 from trainSettingsFramerate import *
 import datetime
 

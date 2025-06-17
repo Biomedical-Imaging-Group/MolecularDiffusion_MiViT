@@ -1,5 +1,5 @@
 from models import *
-from helpersGeneration import *
+from helpers.helpersGeneration import *
 
 
 # Define settings needed in the other files

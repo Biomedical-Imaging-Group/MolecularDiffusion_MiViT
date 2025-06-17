@@ -1,7 +1,7 @@
 from models import *
 from andi_datasets.models_phenom import models_phenom
-from helpersGeneration import *
-from helpersPlot import *
+from helpers.helpersGeneration import *
+from helpers.helpersPlot import *
 from trainSettingsMult import *
 import datetime
 

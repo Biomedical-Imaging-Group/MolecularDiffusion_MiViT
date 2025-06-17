@@ -5,7 +5,7 @@ import torch.optim as optim
 import numpy as np
 import torch.nn.functional as F
 
-MAX_TOKENS = 128  # Assume that we will use maximally 100 tokens
+MAX_TOKENS = 256  # Assume that we will use maximally 100 tokens
 
 # --------------- Custom Multi-Head Attention --------------- #
 class MultiHeadAttention(nn.Module):
