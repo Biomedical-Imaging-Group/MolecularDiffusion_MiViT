@@ -1,5 +1,9 @@
-from models import *
-from helpersGeneration import *
+import sys
+import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../")))
+from helpers.models import *
+
+from helpers.helpersGeneration import *
 
 
 # Define settings needed in the other files

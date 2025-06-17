@@ -27,3 +27,40 @@ This project investigates the use of Vision Transformers (ViTs) for single parti
 - Analysis of molecular motion in live-cell imaging experiments
 - Quantitative assessment of diffusion processes in crowded or heterogeneous media
 - Improved reliability in particle tracking for biological and materials science research
+
+
+
+### Project Structure
+
+├── Experiments  
+│   ├── Denoising  
+│   ├── Embeddings
+│   ├── Framerate
+│   ├── ImagesFeatures
+│   ├── PSFNoise
+│   └── mitochondria_simulation
+│       └── old_version
+├── ProjectReport.pdf
+├── README.md
+├── Real_data_example.ipynb
+├── helpers
+│   ├── helpersFeatures.py
+│   ├── helpersGeneration.py
+│   ├── helpersMSD.py
+│   ├── helpersPlot.py
+│   └── helpersTracking.py
+├── models.py
+├── outPoster
+├── real-data
+│   ├── 70_01_7.tif
+│   └── 83_01_3.tif
+├── tests
+│   ├── RealDataTests.ipynb
+│   ├── Simulator_tests
+│   ├── models_tests
+│   └── train_tests
+└── validation_trajectories
+    ├── 20
+    ├── 30
+    ├── valTrajsInOrder.npy
+    └── valTrajsInOrderImFt.npy

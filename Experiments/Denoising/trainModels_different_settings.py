@@ -1,4 +1,8 @@
-from models import *
+import sys
+import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../")))
+
+from helpers.models import *
 from andi_datasets.models_phenom import models_phenom
 from helpers.helpersGeneration import *
 from helpers.helpersPlot import *

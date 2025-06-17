@@ -1,4 +1,4 @@
-from models import *
+from helpers.models import *
 from andi_datasets.models_phenom import models_phenom
 from helpersGeneration import *
 from helpersPlot import *
