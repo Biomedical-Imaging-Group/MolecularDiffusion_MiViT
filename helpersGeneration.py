@@ -485,13 +485,13 @@ def trajectories_to_video_multiple_settings(
     background_mean, background_std = _image_dict["background_intensity"][0],_image_dict["background_intensity"][1]
     
     for n in range(N):
-        trajectory_to_videoTest(out_videos_no_noise[n,:],out_videos_gauss_noise[n,:],out_videos_Poisson[n,:],out_videos_gauss_filter[n,:],trajectories[n,:],nFrames,output_size,upsampling_factor,nPosPerFrame,
+        trajectory_to_mult_settings(out_videos_no_noise[n,:],out_videos_gauss_noise[n,:],out_videos_Poisson[n,:],out_videos_gauss_filter[n,:],trajectories[n,:],nFrames,output_size,upsampling_factor,nPosPerFrame,
                                                 gaussian_sigma,particle_mean,particle_std,background_mean,background_std, poisson_noise,center)
         
     return out_videos_no_noise,out_videos_gauss_noise, out_videos_Poisson, out_videos_gauss_filter
 
 
-def trajectory_to_videoTest(out_video_no_noise,out_video_gauss_noise, out_video_poiss_noise, out_video_gauss_filter,trajectory,nFrames, output_size, upsampling_factor, nPosPerFrame,gaussian_sigma,particle_mean,particle_std,background_mean,background_std, poisson_noise, center):
+def trajectory_to_mult_settings(out_video_no_noise,out_video_gauss_noise, out_video_poiss_noise, out_video_gauss_filter,trajectory,nFrames, output_size, upsampling_factor, nPosPerFrame,gaussian_sigma,particle_mean,particle_std,background_mean,background_std, poisson_noise, center):
     """Helper function of function above, all arguments documented above"""
     for f in range(nFrames):
         frame_hr = np.zeros(( output_size*upsampling_factor, output_size*upsampling_factor),np.float32)

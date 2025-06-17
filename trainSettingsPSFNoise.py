@@ -247,9 +247,6 @@ def trajs_to_vid_psf_noise(
     gaussian_sigma = upsampling_factor/ resolution * fwhm_psf/2.355
     poisson_noise = _image_dict["poisson_noise"]
     
-    n_psf_settings = len(PSF_Settings)
-    n_noise_settings = len(PSF_Settings)
-
     out_videos = np.zeros((N,N_PSF,N_Noise,nFrames,output_size,output_size),np.float32)
 
 
