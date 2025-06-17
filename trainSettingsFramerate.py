@@ -36,7 +36,7 @@ else:
 # tr_activation_fct = F.LeakyReLU, F.GELU F.ReLU
 
 # Define model hyperparameters
-patch_size = 9
+patch_size = 13
 embed_dim = 64
 num_heads = 4
 hidden_dim = 128
@@ -48,17 +48,15 @@ dropout = 0.0
 traj_div_factor = 100 # need to divide trajectories because they are given in pixels/s but we want trajectories in ms domain
 
 originalNposPerFrame = 10
-nPosPerFrame = [5,10,15,20,30]
+nPosPerFrame = [5,10,15,20,30, 50]
 N_POSPERFRAME = len(nPosPerFrame)
 nFrames = 30 # = Seuence length
 T = nFrames * originalNposPerFrame
 # number of trajectories
+nPosPerFrame_FramesNumber = [T//x for x in nPosPerFrame]
 
-
-
-# values from Real data
-background_mean = 5000
-part_mean, part_std = 5000 ,500
+background_mean,background_sigma = 1420, 290
+part_mean, part_std = 6000 - background_mean,500
 
 image_props = {
     "particle_intensity": [
@@ -73,7 +71,7 @@ image_props = {
     "upsampling_factor": 5,
     "background_intensity": [
         background_mean,
-        0,
+        background_sigma,
     ],  # Standard deviation of background intensity within a video
     "poisson_noise": 100,
     "trajectory_unit" : 1200
@@ -115,16 +113,7 @@ def getTrainingModels(lr=1e-4):
     
     return models, optimizers, schedulers
 
-class ImageDatasetFrameRate(Dataset):
-    def __init__(self, images, labels):
-        self.images = images  # Shape (N, C, H, W)
-        self.labels = labels  # Shape (N, 1)
 
-    def __len__(self):
-        return len(self.images)
-
-    def __getitem__(self, idx):
-        return [self.images[i][idx] for i,x in enumerate(self.images)], self.labels[idx]
     
 
 val_d_in_order = np.arange(0.1,10.01,0.1)
@@ -165,8 +154,9 @@ def load_validation_data(length = 20, skip_inorder=False):
 def make_prediction(model, name, images, eval=True):
 
     prefix, frameR_index = name.split("_")
-
-    input = images[int(frameR_index)]
+    idx = int(frameR_index)
+    frames_to_load = nPosPerFrame_FramesNumber[idx]
+    input = images[:,idx, :frames_to_load]
     predictions = model(input)
 
     
@@ -176,29 +166,34 @@ def make_prediction(model, name, images, eval=True):
 
 def trajs_to_vid_framerates(
     trajectories,
-    nPosPerFrame = [],
-    center = False,
+    nPosPerFrame=[],
+    center=False,
     image_props={},
-    ):
-    N,T,_ = trajectories.shape
+):
+    N, T, _ = trajectories.shape
+    maxFrames = T // nPosPerFrame[0]  # Compute maximum number of frames
 
     part_flux, part_std = image_props["particle_intensity"]
+    bg_mean, bg_sigma = image_props["background_intensity"][0], image_props["background_intensity"][1]
 
-    N_POSPERFRAME = len(nPosPerFrame)
+    # Preallocate zero tensor: (N, len(nPosPerFrame), maxFrames, patch_size, patch_size)
+    output_tensor = torch.zeros((N, N_POSPERFRAME, maxFrames, patch_size, patch_size))
 
-    allVideos = []
+    for i, nSubPos in enumerate(nPosPerFrame):
+        if T % nSubPos != 0:
+            raise Exception("T is not divisible by nPosPerFrame")
 
-    for nSubPos in nPosPerFrame:
-        if(T % nSubPos != 0):
-            raise Exception("T is not divisble by posPerFrame")
+        nFrames = T // nSubPos
+        part_flux_FrameRate = part_flux * (nSubPos / originalNposPerFrame)
 
-        part_flux_FrameRate = part_flux * (nSubPos/originalNposPerFrame)
         image_props_framerate = image_props.copy()
-        image_props_framerate["particle_intensity"]  = [part_flux_FrameRate, part_std]
+        image_props_framerate["particle_intensity"] = [part_flux_FrameRate, part_std]
 
         videos = trajectories_to_video(trajectories, nSubPos, center=center, image_props=image_props_framerate)
-        videos = torch.Tensor(videos)
+        videos, _ = normalize_images(videos, bg_mean, bg_sigma, bg_mean + part_flux_FrameRate)
+        videos = torch.tensor(videos)  # Shape: (N, nFrames, H, W)
 
-        allVideos.append(videos)
+        # Store into preallocated tensor with automatic zero-padding
+        output_tensor[:, i, :nFrames] = videos
 
-    return allVideos
+    return output_tensor  # Shape: (N, len(nPosPerFrame), maxFrames, patch_size, patch_size)

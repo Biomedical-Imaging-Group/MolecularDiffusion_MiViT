@@ -117,7 +117,7 @@ for cycle in range(num_cycles):
 
     print(f"Cycle {cycle+1} out of {num_cycles}: {(cycle+1)/num_cycles * 100:.2f}%")
     # Generate a new batch of images and labels
-    all_videos = [[] for n in nPosPerFrame]
+    all_videos = []
     all_labels = []
 
     for TrainingDs in TrainingDs_list:
@@ -151,22 +151,21 @@ for cycle in range(num_cycles):
         trajs = trajs / traj_div_factor
         videos = trajs_to_vid_framerates(trajs,nPosPerFrame,center=center,image_props=image_props)
 
-        for i,vids in enumerate(videos):
-            all_videos[i].append(videos[i])
+        all_videos.append(videos)
+
 
     # Concatenate all generated data
-    all_videos = [np.concatenate(vids, axis=0) for vids in all_videos]
+    all_videos = torch.cat(all_videos, dim=0)
     all_labels = np.concatenate(all_labels, axis=0)
     # Divide Labels by D_max to have values between 0 and 1 -> better optimizers
     all_labels = all_labels / D_max_normalization
 
 
     # Convert to tensors
-    all_videos = [torch.Tensor(vids) for vids in all_videos]
     all_labels = torch.Tensor(all_labels).unsqueeze(-1)  # Add an extra dimension for single_prediction
 
     # Create a dataset and shuffle
-    dataset = ImageDatasetFrameRate(all_videos, all_labels)
+    dataset = ImageDataset(all_videos, all_labels)
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle= mix_trajectories or shuffle)
 
 
@@ -178,7 +177,7 @@ for cycle in range(num_cycles):
 
         for batch_images, batch_labels in dataloader:
 
-            batch_images = [b.to(device) for b in batch_images]
+            batch_images = batch_images.to(device)
             batch_labels = batch_labels.to(device)
 
             optimizer.zero_grad()
@@ -207,10 +206,10 @@ for cycle in range(num_cycles):
             for vid, label_value in zip(val_videos, val_labels):
                 
 
-                label = torch.full((vid[0].shape[0],), label_value, device=device).view(-1, 1)  # Shape: [batch_size, 1]
+                label = torch.full((vid.shape[0],), label_value, device=device).view(-1, 1)  # Shape: [batch_size, 1]
                 
 
-                vid = [v.to(device) for v in vid]
+                vid = vid.to(device)
                 label = label.to(device)
                 val_predictions = make_prediction(model, name, vid, True)
 
