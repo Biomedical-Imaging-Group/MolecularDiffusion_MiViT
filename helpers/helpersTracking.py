@@ -781,3 +781,81 @@ def computeCorrforFeaturesPlotCorr(df, features, index='track_id'):
     return correlation_matrix
 
 
+
+import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib.animation as animation
+from IPython.display import HTML, display
+
+def play_video(video, figsize=(5, 5), fps=5, vmin=None, vmax=None, save_path=None, no_borders=False):
+    """
+    Displays a stack of images as a video inside Jupyter notebooks with consistent intensity scaling.
+
+    Parameters
+    ----------
+    video : ndarray
+        Stack of images.
+    figsize : tuple, optional
+        Canvas size of the video.
+    fps : int, optional
+        Video frame rate.
+    vmin : float, optional
+        Minimum intensity value for all frames. If None, will be automatically determined.
+    vmax : float, optional
+        Maximum intensity value for all frames. If None, will be automatically determined.
+    save_path : str, optional
+        Path to save the video. Supports .mp4 or .gif.
+    no_borders : bool, optional
+        If True, removes axis, ticks, and borders for clean display.
+
+    Returns
+    -------
+    Video object
+        Returns a video player with input stack of images.
+    """
+    fig, ax = plt.subplots(figsize=figsize)
+    images = []
+
+    if len(video.shape) == 3:
+        video = np.expand_dims(video, axis=-1)
+
+    if no_borders:
+        ax.axis('off')
+        for spine in ax.spines.values():
+            spine.set_visible(False)
+        plt.subplots_adjust(left=0, right=1, top=1, bottom=0)
+    else:
+        ax.axis("off")
+
+    # If vmin/vmax not provided, compute global min/max across all frames
+    if vmin is None:
+        vmin = np.min([frame[:, :, 0].min() for frame in video])
+    if vmax is None:
+        vmax = np.max([frame[:, :, 0].max() for frame in video])
+    mean = np.mean(video)
+
+    print(f"vmin: {vmin} vmax: {vmax} mean: {mean:.2f}")
+
+    for image in video:
+        images.append([ax.imshow(image[:, :, 0], cmap="gray", vmin=vmin, vmax=vmax)])
+
+    anim = animation.ArtistAnimation(
+        fig, images, interval=1e3 / fps, blit=True, repeat_delay=0
+    )
+
+    html = HTML(anim.to_jshtml())
+    display(html)
+
+    if save_path:
+        if save_path.endswith('.mp4'):
+            writer = animation.FFMpegWriter(fps=fps, metadata=dict(artist='Me'), bitrate=1800)
+            anim.save(save_path, writer=writer)
+            print(f"Animation saved to {save_path}")
+        elif save_path.endswith('.gif'):
+            writer = animation.PillowWriter(fps=fps)
+            anim.save(save_path, writer=writer)
+            print(f"Animation saved to {save_path}")
+        else:
+            print("Unsupported file format. Use .mp4 or .gif extension.")
+
+    plt.close()

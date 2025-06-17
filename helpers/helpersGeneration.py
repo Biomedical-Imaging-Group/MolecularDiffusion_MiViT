@@ -657,7 +657,7 @@ def trajs_to_vid_norm_rl(trajectories,
     combined_videos = np.concatenate([videos, vids_with_rl], axis=1)
     return combined_videos
 
-from helpersFeatures import *
+from helpers.helpersFeatures import *
 
 
 def average_trajs_add_error(trajectories, nPosPerFrame, localization_uncertainty):
