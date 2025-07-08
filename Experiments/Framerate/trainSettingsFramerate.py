@@ -128,13 +128,13 @@ def load_validation_data(length = 20, skip_inorder=False):
     if( length not in length_values):
         ValueError(f"Invalid length value, select one in: {length_values}")
 
-    trajs1 = np.load("./valTrajs"+str(length)+"/val1.npy") /traj_div_factor
-    trajs3 = np.load("./valTrajs"+str(length)+"/val3.npy") /traj_div_factor
-    trajs5 = np.load("./valTrajs"+str(length)+"/val5.npy") /traj_div_factor
-    trajs7 = np.load("./valTrajs"+str(length)+"/val7.npy") /traj_div_factor
-    trajs9 = np.load("./valTrajs"+str(length)+"/val9.npy") /traj_div_factor
+    trajs1 = np.load("../validation_trajectories/"+str(length)+"/val1.npy") /traj_div_factor
+    trajs3 = np.load("../validation_trajectories/"+str(length)+"/val3.npy") /traj_div_factor
+    trajs5 = np.load("../validation_trajectories/"+str(length)+"/val5.npy") /traj_div_factor
+    trajs7 = np.load("../validation_trajectories/"+str(length)+"/val7.npy") /traj_div_factor
+    trajs9 = np.load("../validation_trajectories/"+str(length)+"/val9.npy") /traj_div_factor
 
-    trajs_in_order = np.load("./valTrajsInOrderImFt.npy") /traj_div_factor
+    trajs_in_order = np.load("../validation_trajectories/valTrajsInOrderImFt.npy") /traj_div_factor
 
 
     vid1 = trajs_to_vid_framerates(trajs1,nPosPerFrame,center=center,image_props=image_props)
