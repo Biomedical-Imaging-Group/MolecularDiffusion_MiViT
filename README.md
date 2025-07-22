@@ -2,7 +2,7 @@
 
 This project investigates the use of Vision Transformers (ViTs) for single particle tracking in noisy microscopy data. The goal is to train models capable of predicting the diffusion coefficient (D) from synthetic fluorescence image sequences and performing accurate tracking on real experimental data, with the objective of surpassing traditional particle tracking methods in challenging conditions.
 
-This is a Masters Project done at EPFL in the Bio-Imaging Group (BIG) by Emilien Silly (Master student in Data science) under the supervision of Daniel Sage.
+This is a Masters Project (12 ECTS) done at EPFL in the Biomedical-Imaging Group (BIG) by Emilien Silly (Master student in Data science) under the supervision of Daniel Sage.
 
 ## Overview
 
