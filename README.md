@@ -1,8 +1,9 @@
-# Single Particle Tracking with Motion-Informed Vision Transformers (MiViT) 
+## Estimation of Single Molecule Diffusion with Motion-Informed Vision Transformers <span style="color:red">MiViT</red> 
+
+__[Daniel Sage](daniel.sage@epfl.ch) and [Emilien Silly](emilien.silly@epfl.ch)__, Biomedical Imaging Group, Ecole Polytechnique Fédérale de Lausanne (EPFL), Lausanne, Switzerland. <i> 11 July 2025</i>.
+<hr>
 
 This project investigates the use of Vision Transformers (ViTs) for single particle tracking in noisy microscopy data. The goal is to train models capable of predicting the diffusion coefficient (D) from synthetic fluorescence image sequences and performing accurate tracking on real experimental data, with the objective of surpassing traditional particle tracking methods in challenging conditions.
-
-This is a Masters Project (12 ECTS) done at EPFL in the Biomedical-Imaging Group (BIG) by Emilien Silly (Master student in Data science) under the supervision of Daniel Sage.
 
 ## Overview
 
@@ -85,3 +86,5 @@ outPoster folder contains the images and graphs used in the poster of SMLMS 2025
 Contains the real images used for prediction using our models. Results are not as accurate as expected, showing supplementar work needed for this task.
 
 
+# Context
+This is a Masters Project (12 ECTS) done at EPFL in the Biomedical-Imaging Group (BIG) by Emilien Silly (Master student in Data science) under the supervision of Daniel Sage.
